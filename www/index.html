@@ -105,6 +105,10 @@ dialog h2 { margin: 0 0 4px; font-size: 18px; }
         <div><b id="sBalance">0:00</b><span>Saldo Monat</span></div>
       </div>
     </div>
+    <div class="btns" style="margin:0 0 12px">
+      <button onclick="scanPick(true)">📷 Zettel fotografieren</button>
+      <button onclick="scanPick(false)">🖼️ Zettel aus Galerie</button>
+    </div>
     <div class="card">
       <div class="row"><b>Heutige Einträge</b><button class="ghost" onclick="openEdit(null, todayKey())">+ Nachtragen</button></div>
       <div id="todayList"></div>
@@ -188,8 +192,24 @@ dialog h2 { margin: 0 0 4px; font-size: 18px; }
   </form>
 </dialog>
 
+<dialog id="scanDlg">
+  <form method="dialog" id="scanForm">
+    <h2>Erkannte Arbeitszeiten</h2>
+    <p class="muted" id="scanInfo"></p>
+    <div id="scanList"></div>
+    <details style="margin-top:12px"><summary class="muted">Erkannter Text</summary><pre id="scanRaw" style="white-space:pre-wrap;font-size:12px"></pre></details>
+    <div class="actions">
+      <button type="button" onclick="scanDlg.close()">Abbrechen</button>
+      <button type="submit" class="primary" id="scanOk">Übernehmen</button>
+    </div>
+  </form>
+</dialog>
+<input type="file" id="scanCam" accept="image/*" capture="environment" hidden>
+<input type="file" id="scanGal" accept="image/*" hidden>
+
 <div class="toast" id="toast"></div>
 
+<script src="scan.js"></script>
 <script>
 // ---------- Speicher ----------
 const KEY = 'stempeluhr.v1';
@@ -453,6 +473,83 @@ function wipeAll() {
   if (!confirm('Wirklich ALLE Einträge löschen?') || !confirm('Sicher? Das kann nicht rückgängig gemacht werden.')) return;
   db = structuredClone(DEFAULTS); save(); renderSettings(); toast('Alles gelöscht');
 }
+
+// ---------- Stundenzettel scannen ----------
+const scanDlg = document.getElementById('scanDlg');
+let scanDays = [];
+function scanPick(camera) {
+  if (!window.Capacitor?.isNativePlatform?.()) { toast('Scannen geht nur in der installierten App'); return; }
+  document.getElementById(camera ? 'scanCam' : 'scanGal').click();
+}
+// Foto verkleinern (schneller, ML Kit braucht keine 12 MP) und als JPEG-Base64 liefern
+function imageToBase64(file, max = 2400) {
+  return new Promise((ok, fail) => {
+    const img = new Image();
+    img.onload = () => {
+      const s = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas'); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(img.src);
+      ok(c.toDataURL('image/jpeg', 0.92).split(',')[1]);
+    };
+    img.onerror = () => fail(new Error('Bild konnte nicht geladen werden'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+async function scanFile(file) {
+  const { Filesystem, TextRecognition } = window.Capacitor.Plugins;
+  toast('Zettel wird gelesen …');
+  const data = await imageToBase64(file);
+  const { uri } = await Filesystem.writeFile({ path: 'scan.jpg', data, directory: 'CACHE' });
+  const res = await TextRecognition.processImage({ path: uri });
+  const rows = ocrRows(res);
+  document.getElementById('scanRaw').textContent = rows.join('\n');
+  scanDays = parseTimesheet(rows).map(d => {
+    const existing = db.entries.filter(e => dateKey(e.start) === d.key);
+    const exNet = existing.reduce((s, e) => s + calc(e).net, 0);
+    const running = existing.some(e => e.end == null);
+    let status, checked;
+    if (!existing.length) { status = 'neu'; checked = true; }
+    else if (running) { status = 'heute läuft noch ein Eintrag – wird nicht ersetzt'; checked = false; }
+    else if (Math.abs(exNet - d.net) < 2 * M && Math.abs(Math.min(...existing.map(e => e.start)) - d.segments[0].start) < 2 * M) { status = 'schon vorhanden'; checked = false; }
+    else { status = `ersetzt vorhandene ${dur(exNet)}`; checked = true; }
+    return { ...d, status, checked, running };
+  });
+  showScan();
+}
+function showScan() {
+  const list = document.getElementById('scanList');
+  document.getElementById('scanInfo').textContent = scanDays.length
+    ? 'Haken = wird übernommen.' + (scanDays.some(d => d.suspicious) ? ' Gelb markierte Tage bitte prüfen – die Summe passt nicht zum Zettel.' : ' Alle Tagessummen stimmen mit dem Zettel überein ✓')
+    : 'Keine Arbeitszeiten erkannt. Tipp: Zettel flach hinlegen, gutes Licht, ganz im Bild.';
+  list.innerHTML = scanDays.map((d, i) => {
+    const dt = new Date(d.segments[0].start);
+    const segs = d.segments.map(s => `${hm(s.start)}–${hm(s.end)}`).join(', ');
+    return `<label class="row check" style="margin:0;${d.suspicious ? 'background:rgba(217,119,6,.15);border-radius:8px;padding:10px 6px' : ''}">
+      <input type="checkbox" data-i="${i}" ${d.checked ? 'checked' : ''} ${d.running ? 'disabled' : ''}>
+      <div style="flex:1"><b>${WD[dt.getDay()]}, ${dt.getDate()}.${dt.getMonth()+1}.</b> <span class="t">${dur(d.net)}</span>
+      ${d.suspicious ? ` <span class="chip">Zettel: ${dur(d.printedNet)}</span>` : ''}
+      <div class="muted">${segs}</div><div class="muted">${d.status}</div></div></label>`;
+  }).join('');
+  document.getElementById('scanOk').disabled = !scanDays.length;
+  scanDlg.showModal();
+}
+document.getElementById('scanList').addEventListener('change', ev => { const i = ev.target.dataset.i; if (i != null) scanDays[i].checked = ev.target.checked; });
+document.getElementById('scanForm').addEventListener('submit', ev => {
+  ev.preventDefault();
+  const sel = scanDays.filter(d => d.checked && !d.running);
+  for (const d of sel) {
+    db.entries = db.entries.filter(e => dateKey(e.start) !== d.key);
+    db.entries.push({ id: uid(), ...dayToEntry(d) });
+  }
+  scanDlg.close(); save();
+  toast(sel.length ? `${sel.length} Tag(e) übernommen` : 'Nichts übernommen');
+  if (sel.length) { const last = new Date(sel[sel.length - 1].segments[0].start); viewMonth = new Date(last.getFullYear(), last.getMonth(), 1); render(); }
+});
+for (const id of ['scanCam', 'scanGal']) document.getElementById(id).addEventListener('change', ev => {
+  const f = ev.target.files[0]; ev.target.value = '';
+  if (f) scanFile(f).catch(e => toast('Scan fehlgeschlagen: ' + (e.message || e)));
+});
 
 // ---------- Navigation ----------
 document.querySelectorAll('nav button').forEach(btn => btn.onclick = () => {

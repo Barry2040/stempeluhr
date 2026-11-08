@@ -1,15 +1,16 @@
 {
   "name": "stempeluhr",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Einfache Arbeitszeit-Stempeluhr ohne Abo",
   "dependencies": {
-    "@capacitor/android": "^7.0.0",
-    "@capacitor/core": "^7.0.0",
-    "@capacitor/filesystem": "^7.0.0",
-    "@capacitor/share": "^7.0.0"
+    "@capacitor-mlkit/text-recognition": "^8.2.2",
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/filesystem": "^8.1.5",
+    "@capacitor/share": "^8.0.3"
   },
   "devDependencies": {
-    "@capacitor/cli": "^7.0.0"
+    "@capacitor/cli": "^8.6.0"
   }
 }

@@ -6,6 +6,7 @@ Einfache Arbeitszeiterfassung fürs Handy – ohne Abo, ohne Konto, Daten bleibe
 - Einträge nachtragen und bearbeiten (auch über Mitternacht)
 - Tages-, Wochen- und Monatsübersicht mit Soll/Ist und Überstundensaldo
 - Optional: gesetzliche Mindestpause (30/45 Min.) automatisch abziehen
+- Stundenzettel (Bon) fotografieren → Zeiten und Pausen werden automatisch erkannt (offline, Google ML Kit)
 - Monatsexport als CSV (Excel), Backup/Wiederherstellung als JSON
 
 ## Installieren (Android)
