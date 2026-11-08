@@ -1,7 +1,9 @@
 'use strict';
 // ================= Speicher =================
 const KEY = 'stempeluhr.v1';
-const DEFAULT_SETTINGS = { target: 8, days: [1,2,3,4,5], autoBreak: false, startBalance: 0, autoUpdate: true, land: '', vacation: 30, savePhotos: true, checkLaw: true };
+const DEFAULT_REMINDERS = { daily: false, time: '18:00', onlyWorkdays: true, skipIfEntered: true, clockOut: false, clockOutHours: 9, pause: false, pauseMin: 30 };
+const DEFAULT_SETTINGS = { target: 8, days: [1,2,3,4,5], autoBreak: false, startBalance: 0, autoUpdate: true, land: '', vacation: 30, savePhotos: true, checkLaw: true,
+  sollMode: 'day', weekHours: 40, balanceMode: 'total', skipBuild: 0, reminders: DEFAULT_REMINDERS };
 let db = load();
 function load() {
   let d = null;
@@ -9,15 +11,17 @@ function load() {
   d = d && Array.isArray(d.entries) ? d : {};
   const out = {
     entries: d.entries || [], specials: d.specials || [], tags: d.tags || [], trash: d.trash || [],
+    vacationYears: d.vacationYears || {}, // { "2026": { days: 30, carry: 2 } }
     settings: { ...DEFAULT_SETTINGS, ...(d.settings || {}) },
   };
+  out.settings.reminders = { ...DEFAULT_REMINDERS, ...(d.settings?.reminders || {}) };
   out.entries.forEach(e => { e.tags ||= []; e.breaks ||= []; });
   const cutoff = Date.now() - 30 * 864e5; // Papierkorb nach 30 Tagen leeren
   out.trash = out.trash.filter(t => t.at > cutoff);
   return out;
 }
 let _idx = null;
-function save(rerender = true) { _idx = null; localStorage.setItem(KEY, JSON.stringify(db)); if (rerender) render(); }
+function save(rerender = true) { _idx = null; localStorage.setItem(KEY, JSON.stringify(db)); if (rerender) render(); scheduleReminders(); }
 
 // ================= Hilfen =================
 const H = 3600000, M = 60000, DAY = 864e5;
@@ -93,9 +97,13 @@ function calc(e, now = Date.now()) {
 }
 const netOf = (k, now) => entriesOf(k).reduce((s, e) => s + calc(e, now).net, 0);
 const brkOf = (k, now) => entriesOf(k).reduce((s, e) => s + calc(e, now).brk, 0);
+// Soll pro Arbeitstag: direkt eingestellt oder Wochenstunden gleichmäßig auf die Arbeitstage verteilt
+const dailyTarget = () => db.settings.sollMode === 'week'
+  ? (db.settings.days.length ? db.settings.weekHours / db.settings.days.length : 0) * H
+  : db.settings.target * H;
 function sollOf(k) {
   const d = parseKey(k);
-  let s = db.settings.days.includes(d.getDay()) ? db.settings.target * H : 0;
+  let s = db.settings.days.includes(d.getDay()) ? dailyTarget() : 0;
   if (s && holidayOf(k)) s = 0;
   const sp = specialOf(k);
   if (sp && s && SPECIAL[sp.type]?.credit) s = sp.half ? s / 2 : 0;
@@ -120,11 +128,20 @@ function balanceUntil(k, now = Date.now()) {
   for (const d of days(first, end)) bal += netOf(d, now) - sollOf(d);
   return bal;
 }
+// Woche (Mo–So) des Tages k: Ist, Soll der ganzen Woche, Rest
+function weekStats(k, now = Date.now()) {
+  const from = mondayOf(k), to = addDays(from, 6);
+  let ist = 0, soll = 0;
+  for (const d of days(from, to)) { ist += netOf(d, now); soll += sollOf(d); }
+  return { from, to, ist, soll, diff: ist - soll };
+}
+// Stundenkonto: fortlaufend oder jede Woche neu (dann = Ist − Soll der laufenden Woche)
+const kontoOf = (k, now = Date.now()) => db.settings.balanceMode === 'week' ? weekStats(k, now).diff : balanceUntil(todayKey(), now);
 const active = () => db.entries.find(e => e.end == null);
 const openBreak = e => e?.breaks.find(b => b.end == null);
 
 // ================= Stempeln =================
-function clockIn() { if (active()) return; db.entries.push({ id: uid(), start: Date.now(), end: null, breaks: [], tags: [], note: '' }); ui.date = todayKey(); save(); toast('Eingestempelt'); }
+function clockIn() { const a = active(); if (a) { toast(`Es läuft noch ein Eintrag vom ${shortDate(dateKey(a.start))} – erst ausstempeln oder bearbeiten`); return; } db.entries.push({ id: uid(), start: Date.now(), end: null, breaks: [], tags: [], note: '' }); ui.date = todayKey(); save(); toast('Eingestempelt'); }
 function clockOut() { const e = active(); if (!e) return; const now = Date.now(); const b = openBreak(e); if (b) b.end = now; e.end = now; save(); toast('Ausgestempelt – ' + dur(calc(e).net) + ' gearbeitet'); }
 function breakStart() { const e = active(); if (!e) return; e.breaks.push({ start: Date.now(), end: null }); save(); toast('Pause gestartet'); }
 function breakEnd() { const b = openBreak(active()); if (!b) return; b.end = Date.now(); save(); toast('Pause beendet'); }
@@ -137,6 +154,7 @@ function trashSpecial(s) { db.specials = db.specials.filter(x => x !== s && x.id
 const VIEWS = {
   menu: 'Menü', tag: 'Tag', woche: 'Woche', monat: 'Monat', jahr: 'Jahr', besondere: 'Besondere Tage', suchen: 'Suchen',
   tags: 'Tags', diagramm: 'Diagramm', inkonsistent: 'Inkonsistentes', fotos: 'Fotos', auszug: 'Auszug', papierkorb: 'Papierkorb', settings: 'Einstellungen',
+  urlaub: 'Urlaub', feiertage: 'Feiertage',
 };
 const ROOT = ['menu', 'tag', 'settings'];
 const ui = { view: 'tag', date: todayKey(), week: mondayOf(todayKey()), month: todayKey().slice(0, 7), year: +todayKey().slice(0, 4),
@@ -190,6 +208,9 @@ const TI = {
   papierkorb: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
   scan: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 011-1h3M16 4h3a1 1 0 011 1v3M20 16v3a1 1 0 01-1 1h-3M8 20H5a1 1 0 01-1-1v-3M8 9h8M8 12h8M8 15h5"/></svg>',
   settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>',
+  urlaub: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V11M5 9a7 7 0 0114 0z"/><path d="M4 21h16"/></svg>',
+  feiertage: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg>',
+  glocke: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0112 0v5l2 2H4z"/><path d="M10 20a2 2 0 004 0"/></svg>',
   hilfe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 114 2c-1 .7-1.5 1.2-1.5 2.5M12 17v.01"/></svg>',
 };
 const tile = (v, label, onclick, badge) => `<button class="tile" onclick="${onclick || `go('${v}')`}"><span class="ti">${TI[v]}</span>${label}${badge ? `<span class="badge">${badge}</span>` : ''}</button>`;
@@ -201,10 +222,12 @@ RENDER.menu = () => {
     <div class="sec">ANSICHTEN</div>
     <div class="tiles">${tile('tag', 'Tag', "go('tag',{date:todayKey()})")}${tile('woche', 'Woche')}${tile('monat', 'Monat')}${tile('jahr', 'Jahr')}</div>
     <div class="sec">WERKZEUGE</div>
-    <div class="tiles">${tile('besondere', 'Besondere')}${tile('suchen', 'Suchen')}${tile('tags', 'Tags')}${tile('diagramm', 'Diagramm')}
-      ${tile('inkonsistent', 'Prüfen', null, n ? (n > 99 ? '99+' : n) : '')}${tile('fotos', 'Fotos')}${tile('auszug', 'Auszug')}${tile('papierkorb', 'Papierkorb', null, db.trash.length || '')}</div>
+    <div class="tiles">${tile('urlaub', 'Urlaub')}${tile('feiertage', 'Feiertage')}${tile('besondere', 'Besondere')}${tile('suchen', 'Suchen')}
+      ${tile('tags', 'Tags')}${tile('diagramm', 'Diagramm')}${tile('inkonsistent', 'Prüfen', null, n ? (n > 99 ? '99+' : n) : '')}${tile('fotos', 'Fotos')}
+      ${tile('auszug', 'Auszug')}${tile('papierkorb', 'Papierkorb', null, db.trash.length || '')}</div>
     <div class="sec">MEHR</div>
-    <div class="tiles">${tile('scan', 'Zettel fotografieren', 'scanPick(true)')}${tile('fotos', 'Zettel aus Galerie', 'scanPick(false)')}${tile('settings', 'Einstellungen')}
+    <div class="tiles">${tile('scan', 'Zettel fotografieren', 'scanPick(true)')}${tile('fotos', 'Zettel aus Galerie', 'scanPick(false)')}
+      ${tile('glocke', 'Erinnerungen', "go('settings');setTimeout(()=>$('remCard')?.scrollIntoView({behavior:'smooth'}),80)")}${tile('settings', 'Einstellungen')}
       ${tile('hilfe', 'Hilfe', "openLink('https://github.com/Barry2040/stempeluhr#readme')")}</div>`;
 };
 function openLink(url) { location.href = url; }
@@ -234,14 +257,16 @@ RENDER.tag = () => {
   topbar(act("openShareDay()", ICON.share, 'Tag teilen') + act("openEdit(null, ui.date)", ICON.plus, 'Eintrag hinzufügen'));
   const now = Date.now(), k = ui.date, isToday = k === todayKey();
   const net = netOf(k, now), soll = sollOf(k), list = entriesOf(k), sp = specialOf(k), hol = holidayOf(k);
-  const bal = balanceUntil(todayKey(), now);
+  const weekMode = db.settings.balanceMode === 'week';
+  const bal = kontoOf(k, now), ws = weekStats(k, now);
   const e = active(), b = openBreak(e);
   let clock = '';
   if (isToday) {
     const mode = e ? (b ? 'pause' : 'work') : 'off';
+    const since = e && dateKey(e.start) !== k ? ` (${shortDate(dateKey(e.start))})` : '';
     clock = `<div class="card clock">
-      <div class="state"><span class="dot ${mode === 'off' ? '' : mode}"></span>${mode === 'off' ? 'Nicht eingestempelt' : mode === 'work' ? 'Bei der Arbeit seit ' + hm(e.start) : 'Pause seit ' + hm(b.start)}</div>
-      <div class="big">${mode === 'pause' ? dur(now - b.start) : dur(net)}</div>
+      <div class="state"><span class="dot ${mode === 'off' ? '' : mode}"></span>${mode === 'off' ? 'Nicht eingestempelt' : mode === 'work' ? 'Bei der Arbeit seit ' + hm(e.start) + since : 'Pause seit ' + hm(b.start)}</div>
+      <div class="big">${mode === 'pause' ? dur(now - b.start) : dur(e && since ? calc(e, now).net : net)}</div>
       <div class="btns">${mode === 'off' ? `<button class="primary full" style="font-size:18px;padding:16px" onclick="clockIn()">Einstempeln</button>`
         : mode === 'work' ? `<button class="warn" onclick="breakStart()">Pause</button><button class="danger" onclick="clockOut()">Ausstempeln</button>`
         : `<button class="primary" onclick="breakEnd()">Pause beenden</button><button class="danger" onclick="clockOut()">Ausstempeln</button>`}</div>
@@ -259,9 +284,13 @@ RENDER.tag = () => {
     <div class="card stats">
       <div><span>Gearbeitet</span><b>${durHM(net)}</b></div>
       <div><span>Tagessaldo</span><b class="${cls(net - soll)}">${net - soll >= 0 ? '+' : ''}${durHM(net - soll)}</b></div>
-      <div><span>Stundenkonto</span><b class="${cls(bal)}">${bal >= 0 ? '+' : ''}${durHM(bal)}</b></div>
+      <div><span>${weekMode ? 'Wochenkonto' : 'Stundenkonto'}</span><b class="${cls(bal)}">${bal >= 0 ? '+' : ''}${durHM(bal)}</b></div>
     </div>
     ${clock}${specCard}
+    ${ws.soll ? `<div class="card click" onclick="go('woche',{week:'${ws.from}'})" style="padding:12px 16px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline"><b>KW ${isoWeek(parseKey(ws.from))}: ${dur(ws.ist)} von ${dur(ws.soll)}</b>
+        <span class="${ws.diff >= 0 ? 'pos' : 'muted'}">${ws.diff >= 0 ? '✓ Wochensoll erreicht' + (ws.diff >= M ? ' · ' + dur(ws.diff, true) : '') : 'noch ' + dur(-ws.diff)}</span></div>
+      <div class="bar"><i class="${ws.diff >= 0 ? 'over' : ''}" style="width:${Math.min(100, ws.ist / ws.soll * 100)}%"></i></div></div>` : ''}
     <div class="card">${list.map((x, i) => (i ? `<div class="tl-seg gap">Unterbrechung · ${durHM(x.start - (list[i-1].end ?? now))}</div>` : '') + timelineHTML(x, now)).join('') || empty}</div>
     <div class="card" id="dayPhotos" hidden><h3>Fotos</h3><div class="thumbs" id="dayThumbs"></div></div>
     <div class="btns" style="grid-template-columns:1fr 1fr 1fr">
@@ -322,6 +351,9 @@ RENDER.woche = () => {
       <h2 onclick="ui.week=mondayOf(todayKey());render()">KW ${kw} · ${parseKey(from).getDate()}.${parseKey(from).getMonth()+1}. – ${parseKey(to).getDate()}.${parseKey(to).getMonth()+1}.</h2>
       <button onclick="ui.week=addDays(ui.week,7);render()">›</button></div>
     ${statsCard(st)}
+    ${(() => { const ws = weekStats(from, now); return ws.soll ? `<div class="card" style="padding:12px 16px">
+      <div style="display:flex;justify-content:space-between"><b>Wochensoll ${dur(ws.soll)}</b><span class="${ws.diff >= 0 ? 'pos' : 'muted'}">${ws.diff >= 0 ? '✓ erreicht' + (ws.diff >= M ? ' · ' + dur(ws.diff, true) : '') : 'noch ' + dur(-ws.diff)}</span></div>
+      <div class="bar"><i class="${ws.diff >= 0 ? 'over' : ''}" style="width:${Math.min(100, ws.ist / ws.soll * 100)}%"></i></div></div>` : ''; })()}
     <div class="card">${[...days(from, to)].map(k => dayRowHTML(k, now)).join('')}</div>`;
 };
 function isoWeek(d) { const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); const n = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() + 4 - n); const y = new Date(Date.UTC(t.getUTCFullYear(), 0, 1)); return Math.ceil(((t - y) / DAY + 1) / 7); }
@@ -370,14 +402,110 @@ RENDER.jahr = () => {
       <div class="bar"><i class="${s.ist >= s.soll && s.soll ? 'over' : ''}" style="width:${pct}%"></i></div></div>`;
   }).join('');
   const cnt = t => db.specials.filter(s => s.type === t && s.date.startsWith(y + '-')).reduce((a, s) => a + (s.half ? .5 : 1), 0);
+  const v = vacationSummary(y);
   $('v-jahr').innerHTML = `
     <div class="datebar"><button onclick="ui.year--;render()">‹</button><h2 onclick="ui.year=new Date().getFullYear();render()">${y}</h2><button onclick="ui.year++;render()">›</button></div>
     ${statsCard(st)}
-    <div class="card stats">
-      <div><span>Urlaub</span><b>${cnt('urlaub')} / ${db.settings.vacation}</b></div>
-      <div><span>Krank</span><b>${cnt('krank')}</b></div>
-      <div><span>Rest-Urlaub</span><b>${db.settings.vacation - cnt('urlaub')}</b></div></div>
+    <div class="card stats click" onclick="go('urlaub',{vacYear:${y}})">
+      <div><span>Urlaub genommen</span><b>${fmtDays(v.taken + v.planned)} / ${fmtDays(v.total)}</b></div>
+      <div><span>Krank</span><b>${fmtDays(cnt('krank'))}</b></div>
+      <div><span>Resturlaub</span><b class="${v.left < 0 ? 'neg' : ''}">${fmtDays(v.left)}</b></div></div>
     <div class="card">${rows}</div>`;
+};
+
+// ================= Urlaub =================
+const fmtDays = n => String(n).replace('.', ',');
+function vacationOf(y) { const v = db.vacationYears[y] || {}; return { days: v.days ?? db.settings.vacation, carry: v.carry ?? 0 }; }
+function vacationSummary(y) {
+  const { days: d, carry } = vacationOf(y), today = todayKey();
+  let taken = 0, planned = 0;
+  for (const s of db.specials) if (s.type === 'urlaub' && s.date.startsWith(y + '-')) { const n = s.half ? .5 : 1; if (s.date <= today) taken += n; else planned += n; }
+  const total = d + carry;
+  return { days: d, carry, total, taken, planned, left: total - taken - planned };
+}
+// aufeinanderfolgende Urlaubstage zu Blöcken zusammenfassen (Wochenenden/Feiertage dazwischen erlaubt)
+function vacationBlocks(y) {
+  const list = db.specials.filter(s => s.type === 'urlaub' && s.date.startsWith(y + '-')).sort((a, b) => a.date.localeCompare(b.date));
+  const blocks = [];
+  for (const s of list) {
+    const last = blocks[blocks.length - 1];
+    let bridge = !!last;
+    if (last) for (const k of days(addDays(last.to, 1), addDays(s.date, -1))) if (sollOf(k) > 0 || specialOf(k)) { bridge = false; break; }
+    if (last && bridge && !last.half && !s.half) { last.to = s.date; last.items.push(s); last.n += 1; }
+    else blocks.push({ from: s.date, to: s.date, items: [s], n: s.half ? .5 : 1, half: s.half });
+  }
+  return blocks.reverse();
+}
+function workdaysIn(from, to) { let n = 0; for (const k of days(from, to)) if (db.settings.days.includes(parseKey(k).getDay()) && !holidayOf(k)) n++; return n; }
+// Brückentage: Feiertag am Di/Do -> Mo/Fr frei nehmen ergibt ein langes Wochenende
+function bridgeDays(y) {
+  const out = [];
+  for (const [k, name] of Object.entries(holidaysOf(y, db.settings.land))) {
+    const wd = parseKey(k).getDay(), b = wd === 2 ? addDays(k, -1) : wd === 4 ? addDays(k, 1) : null;
+    if (b && db.settings.days.includes(parseKey(b).getDay()) && !holidayOf(b)) out.push({ k: b, name, holiday: k, free: 4 });
+  }
+  return out;
+}
+RENDER.urlaub = () => {
+  const y = ui.vacYear ||= new Date().getFullYear();
+  topbar(act(`openSpecial(null, todayKey(), 'urlaub')`, ICON.plus, 'Urlaub eintragen'));
+  const v = vacationSummary(y), prev = vacationSummary(y - 1), blocks = vacationBlocks(y), today = todayKey();
+  const pct = v.total ? Math.min(100, (v.taken + v.planned) / v.total * 100) : 0;
+  const bridges = bridgeDays(y).filter(b => b.k >= today);
+  $('v-urlaub').innerHTML = `
+    <div class="datebar"><button onclick="ui.vacYear--;render()">‹</button><h2 onclick="ui.vacYear=new Date().getFullYear();render()">Urlaub ${y}</h2><button onclick="ui.vacYear++;render()">›</button></div>
+    <div class="card stats">
+      <div><span>Genommen</span><b>${fmtDays(v.taken)}</b></div>
+      <div><span>Geplant</span><b>${fmtDays(v.planned)}</b></div>
+      <div><span>Verfügbar</span><b class="${v.left < 0 ? 'neg' : 'pos'}">${fmtDays(v.left)}</b></div></div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between"><b>${fmtDays(v.taken + v.planned)} von ${fmtDays(v.total)} Tagen verplant</b><span class="muted">${Math.round(pct)}%</span></div>
+      <div class="bar" style="height:12px;border-radius:6px"><i style="width:${pct}%;border-radius:6px"></i></div>
+      <div class="inline" style="margin-top:6px">
+        <div><label>Anspruch ${y} (Tage)</label><input type="number" id="vacDays" min="0" step="0.5" value="${v.days}"></div>
+        <div><label>Rest aus ${y - 1}</label><input type="number" id="vacCarry" min="0" step="0.5" value="${v.carry}"></div></div>
+      ${prev.left > 0 && v.carry !== prev.left ? `<button class="ghost small" style="margin-top:6px" onclick="setVacation(${y},{carry:${prev.left}})">Rest aus ${y - 1} übernehmen (${fmtDays(prev.left)} Tage)</button>` : ''}
+      <div class="btns" style="margin-top:12px"><button class="primary full" onclick="openSpecial(null, todayKey(), 'urlaub')">+ Urlaub eintragen</button></div></div>
+    <div class="card"><h3>Eingetragen</h3>${blocks.map(b => `<div class="row">
+      <div class="click" onclick="go('tag',{date:'${b.from}'})"><b>${shortDate(b.from)}${b.to !== b.from ? ' – ' + shortDate(b.to) : ''}</b>${b.half ? ' (½)' : ''}
+        <div class="muted">${fmtDays(b.n)} ${b.n === 1 ? 'Tag' : 'Tage'}${b.from > today ? ' · geplant' : ''}${b.items[0].note ? ' · ' + esc(b.items[0].note) : ''}</div></div>
+      <button class="small" onclick="deleteVacationBlock('${b.items.map(i => i.id).join(',')}')">Löschen</button></div>`).join('') || '<div class="empty">Noch kein Urlaub eingetragen</div>'}</div>
+    ${bridges.length ? `<div class="card"><h3>💡 Brückentage</h3><p class="muted" style="margin-top:0">1 Urlaubstag = 4 Tage frei</p>
+      ${bridges.map(b => `<div class="row"><div><b>${shortDate(b.k)}</b><div class="muted">neben ${b.name} (${shortDate(b.holiday)})</div></div>
+        ${specialOf(b.k) ? `<span class="muted">${SPECIAL[specialOf(b.k).type].icon} eingetragen</span>` : `<button class="small" onclick="quickSpecial('${b.k}','urlaub')">Urlaub nehmen</button>`}</div>`).join('')}</div>` : ''}`;
+  const upd = () => setVacation(y, { days: parseFloat($('vacDays').value) || 0, carry: parseFloat($('vacCarry').value) || 0 });
+  $('vacDays').onchange = upd; $('vacCarry').onchange = upd;
+};
+function setVacation(y, patch) { db.vacationYears[y] = { ...vacationOf(y), ...patch }; save(); toast('Gespeichert'); }
+function deleteVacationBlock(ids) {
+  const list = ids.split(',').map(id => db.specials.find(s => s.id === id)).filter(Boolean);
+  if (!confirm(`${list.length} Urlaubstag(e) löschen?`)) return;
+  list.forEach(trashSpecial); save(); toast('In den Papierkorb verschoben');
+}
+
+// ================= Feiertage =================
+RENDER.feiertage = () => {
+  topbar();
+  const y = ui.holYear ||= new Date().getFullYear(), today = todayKey();
+  const hol = Object.entries(holidaysOf(y, db.settings.land));
+  const next = hol.find(([k]) => k >= today);
+  const onWork = hol.filter(([k]) => db.settings.days.includes(parseKey(k).getDay())).length;
+  $('v-feiertage').innerHTML = `
+    <div class="card"><label style="margin-top:0">Dein Bundesland</label>
+      <select id="holLand">${Object.entries(BUNDESLAENDER).map(([k, n]) => `<option value="${k}" ${k === db.settings.land ? 'selected' : ''}>${n}</option>`).join('')}</select>
+      <p class="muted" style="margin-bottom:0">Feiertage an Arbeitstagen haben automatisch kein Soll. Regionale Feiertage (z.B. Augsburger Friedensfest) trägst du unter „Besondere“ als Feiertag ein.</p></div>
+    <div class="datebar"><button onclick="ui.holYear--;render()">‹</button><h2 onclick="ui.holYear=new Date().getFullYear();render()">${y}</h2><button onclick="ui.holYear++;render()">›</button></div>
+    <div class="card stats"><div><span>Feiertage</span><b>${hol.length}</b></div><div><span>an Arbeitstagen</span><b>${onWork}</b></div>
+      <div><span>Nächster</span><b style="font-size:14px">${next ? shortDate(next[0]) : '–'}</b></div></div>
+    <div class="card">${hol.map(([k, n]) => {
+      const d = parseKey(k), work = db.settings.days.includes(d.getDay()), inDays = Math.round((d - parseKey(today)) / DAY);
+      return `<div class="row click" onclick="go('tag',{date:'${k}'})" style="${k < today ? 'opacity:.55' : ''}">
+        <div><b>${n}</b><div class="muted">${WDL[d.getDay()]}, ${d.getDate()}. ${MONTHS[d.getMonth()]}${work ? '' : ' · arbeitsfrei'}</div></div>
+        <span class="muted">${inDays === 0 ? 'heute' : inDays > 0 ? 'in ' + inDays + ' T.' : ''}</span></div>`;
+    }).join('')}</div>
+    ${bridgeDays(y).length ? `<div class="card"><h3>💡 Brückentage ${y}</h3>${bridgeDays(y).map(b => `<div class="row"><span><b>${shortDate(b.k)}</b> <span class="muted">neben ${b.name}</span></span>
+      ${specialOf(b.k) ? '<span class="muted">eingetragen</span>' : b.k >= today ? `<button class="small" onclick="quickSpecial('${b.k}','urlaub')">Urlaub nehmen</button>` : ''}</div>`).join('')}</div>` : ''}`;
+  $('holLand').onchange = ev => { db.settings.land = ev.target.value; save(); toast(BUNDESLAENDER[db.settings.land]); };
 };
 
 // ================= Besondere Tage =================
@@ -396,26 +524,42 @@ RENDER.besondere = () => {
       <div class="btns" style="margin-top:12px"><button class="primary full" onclick="openSpecial(null, todayKey())">+ Urlaub, Krank & Co. eintragen</button></div></div>
     <div class="card"><h3>Eingetragen</h3>${list.map(s => `<div class="row click" onclick="openSpecial('${s.id}')">
       <span>${SPECIAL[s.type].icon} <b>${shortDate(s.date)}</b> ${SPECIAL[s.type].name}${s.half ? ' (½)' : ''}</span><span class="muted">${esc(s.note || '')}</span></div>`).join('') || '<div class="empty">–</div>'}</div>
-    <div class="card"><h3>Gesetzliche Feiertage ${y}</h3><p class="muted" style="margin-top:0">${esc(BUNDESLAENDER[db.settings.land])} · ändern in den Einstellungen</p>
-      ${hol.map(([k, n]) => `<div class="row click" onclick="go('tag',{date:'${k}'})"><span>${shortDate(k)}</span><span>${n}</span></div>`).join('')}</div>`;
+    <div class="card click" onclick="go('feiertage',{holYear:${y}})"><div class="row" style="border:0;padding:0"><div><b>🎉 Gesetzliche Feiertage ${y}: ${hol.length}</b>
+      <div class="muted">${esc(BUNDESLAENDER[db.settings.land])} · antippen zum Anzeigen und Bundesland ändern</div></div><span style="font-size:22px">›</span></div></div>
+    <div class="card click" onclick="go('urlaub',{vacYear:${y}})"><div class="row" style="border:0;padding:0"><div><b>🏖️ Urlaub ${y}: noch ${fmtDays(vacationSummary(y).left)} Tage</b>
+      <div class="muted">Anspruch, genommen, geplant und Brückentage</div></div><span style="font-size:22px">›</span></div></div>`;
 };
 let specEditing = null;
-function openSpecial(id, key) {
+function openSpecial(id, key, type) {
   const s = id ? db.specials.find(x => x.id === id) : null;
   specEditing = s;
   $('sType').innerHTML = Object.entries(SPECIAL).map(([k, d]) => `<option value="${k}">${d.icon} ${d.name}</option>`).join('');
-  $('sType').value = s?.type || 'urlaub';
+  $('sType').value = s?.type || type || 'urlaub';
   $('sFrom').value = s?.date || key || ui.date; $('sTo').value = s?.date || key || ui.date;
   $('sToWrap').hidden = !!s; $('sHalf').checked = !!s?.half; $('sNote').value = s?.note || '';
-  $('specTitle').textContent = s ? 'Besonderen Tag bearbeiten' : 'Besonderer Tag';
-  $('sHint').textContent = s ? '' : 'Bei einem Zeitraum werden nur Arbeitstage eingetragen (Wochenenden und Feiertage werden übersprungen).';
+  $('specTitle').textContent = s ? 'Besonderen Tag bearbeiten' : type === 'urlaub' ? 'Urlaub eintragen' : 'Besonderer Tag';
   $('sDelete').hidden = !s;
+  specHint();
   $('specDlg').showModal();
 }
+function specHint() {
+  if (specEditing) { $('sHint').textContent = ''; return; }
+  const from = $('sFrom').value, to = $('sTo').value && $('sTo').value >= from ? $('sTo').value : from;
+  if (!from) return;
+  const n = from === to ? 1 : workdaysIn(from, to), f = $('sHalf').checked ? n / 2 : n;
+  let t = from === to ? '' : `= ${fmtDays(f)} Arbeitstage (Wochenenden und Feiertage werden übersprungen).`;
+  if ($('sType').value === 'urlaub') { const y = +from.slice(0, 4), left = vacationSummary(y).left; t += ` Danach noch ${fmtDays(left - f)} Urlaubstage in ${y} übrig.`; }
+  $('sHint').textContent = t.trim();
+}
+['sFrom', 'sTo', 'sHalf', 'sType'].forEach(id => $(id).addEventListener('input', specHint));
 $('specForm').addEventListener('submit', ev => {
   ev.preventDefault();
   const type = $('sType').value, half = $('sHalf').checked, note = $('sNote').value.trim();
-  if (specEditing) { Object.assign(specEditing, { type, half, note, date: $('sFrom').value }); }
+  if (specEditing) {
+    const date = $('sFrom').value;
+    const clash = db.specials.find(x => x.date === date && x !== specEditing); if (clash) trashSpecial(clash);
+    Object.assign(specEditing, { type, half, note, date });
+  }
   else {
     const from = $('sFrom').value, to = $('sTo').value && $('sTo').value >= from ? $('sTo').value : from;
     let n = 0;
@@ -582,7 +726,7 @@ RENDER.inkonsistent = () => {
       ${x.missing ? `<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">${['urlaub','krank','frei'].map(t => `<button class="small" onclick="quickSpecial('${x.k}','${t}')">${SPECIAL[t].icon} ${SPECIAL[t].name}</button>`).join('')}<button class="small" onclick="openEdit(null,'${x.k}')">+ Eintrag</button></div>` : ''}</div>`).join('')
       : '<div class="empty">✅ Alles in Ordnung</div>'}</div>`;
 };
-function quickSpecial(k, type) { db.specials.push({ id: uid(), date: k, type, half: false, note: '' }); save(); toast(`${SPECIAL[type].name} eingetragen`); }
+function quickSpecial(k, type) { const old = specialOf(k); if (old) trashSpecial(old); db.specials.push({ id: uid(), date: k, type, half: false, note: '' }); save(); toast(`${SPECIAL[type].name} eingetragen`); }
 
 // ================= Fotos (IndexedDB) =================
 const PDB = {
@@ -744,12 +888,35 @@ RENDER.settings = () => {
   const s = db.settings;
   $('v-settings').innerHTML = `
     <div class="card"><h3>Arbeitszeit</h3>
-      <label>Sollstunden pro Arbeitstag</label><input type="number" id="setTarget" step="0.25" min="0" max="24" value="${s.target}">
+      <label>Sollzeit angeben</label>
+      <div class="seg" style="margin:0"><button type="button" class="${s.sollMode !== 'week' ? 'on' : ''}" onclick="db.settings.sollMode='day';save()">pro Tag</button><button type="button" class="${s.sollMode === 'week' ? 'on' : ''}" onclick="db.settings.sollMode='week';save()">pro Woche</button></div>
+      ${s.sollMode === 'week'
+        ? `<label>Wochenstunden (z.B. 35, 40, 45)</label><input type="number" id="setWeekHours" step="0.5" min="0" max="100" value="${s.weekHours}">
+           <p class="muted" style="margin:4px 0 0">= ${dur(dailyTarget())} pro Arbeitstag. Feiertage und Urlaub senken das Wochensoll automatisch.</p>`
+        : `<label>Sollstunden pro Arbeitstag</label><input type="number" id="setTarget" step="0.25" min="0" max="24" value="${s.target}">
+           <p class="muted" style="margin:4px 0 0">= ${dur(s.target * H * s.days.length)} pro Woche</p>`}
       <label>Arbeitstage</label><div class="weekdays">${[1,2,3,4,5,6,0].map(d => `<label><input type="checkbox" data-day="${d}" ${s.days.includes(d) ? 'checked' : ''}>${WD[d]}</label>`).join('')}</div>
+      <label>Stundenkonto</label>
+      <div class="seg" style="margin:0"><button type="button" class="${s.balanceMode !== 'week' ? 'on' : ''}" onclick="db.settings.balanceMode='total';save()">fortlaufend</button><button type="button" class="${s.balanceMode === 'week' ? 'on' : ''}" onclick="db.settings.balanceMode='week';save()">jede Woche neu</button></div>
+      <p class="muted" style="margin:4px 0 0">${s.balanceMode === 'week' ? 'Das Konto startet jeden Montag bei −Wochensoll und erreicht 0, sobald du dein Wochensoll geschafft hast.' : 'Über- und Minusstunden sammeln sich über alle Wochen und Monate.'}</p>
       <label class="check" style="margin-top:16px"><input type="checkbox" id="setAutoBreak" ${s.autoBreak ? 'checked' : ''}> Gesetzliche Mindestpause automatisch abziehen (30 Min. ab 6 Std., 45 Min. ab 9 Std.)</label>
-      <label>Startsaldo (Überstunden von vor der App, z.B. 2.5 oder -1)</label><input type="number" id="setStartBalance" step="0.25" value="${s.startBalance || 0}">
-      <label>Urlaubsanspruch pro Jahr (Tage)</label><input type="number" id="setVacation" step="0.5" min="0" value="${s.vacation}">
-      <label>Bundesland für Feiertage</label><select id="setLand">${Object.entries(BUNDESLAENDER).map(([k, n]) => `<option value="${k}" ${k === s.land ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
+      ${s.balanceMode !== 'week' ? `<label>Startsaldo (Überstunden von vor der App, z.B. 2.5 oder -1)</label><input type="number" id="setStartBalance" step="0.25" value="${s.startBalance || 0}">` : ''}</div>
+    <div class="card"><h3>Urlaub & Feiertage</h3>
+      <div class="row click" onclick="go('urlaub')"><span>🏖️ Urlaub ${new Date().getFullYear()}</span><span class="muted">noch ${fmtDays(vacationSummary(new Date().getFullYear()).left)} von ${fmtDays(vacationSummary(new Date().getFullYear()).total)} Tagen ›</span></div>
+      <div class="row click" onclick="go('feiertage')"><span>🎉 Bundesland</span><span class="muted">${esc(BUNDESLAENDER[s.land])} ›</span></div>
+      <label>Standard-Urlaubsanspruch für neue Jahre (Tage)</label><input type="number" id="setVacation" step="0.5" min="0" value="${s.vacation}"></div>
+    <div class="card" id="remCard"><h3>🔔 Erinnerungen</h3>
+      <label class="check"><input type="checkbox" id="remDaily" ${s.reminders.daily ? 'checked' : ''}> Täglich erinnern, die Zeit einzutragen</label>
+      <div class="inline" ${s.reminders.daily ? '' : 'hidden'}><div><label>Uhrzeit</label><input type="time" id="remTime" value="${s.reminders.time}"></div></div>
+      <div ${s.reminders.daily ? '' : 'hidden'}>
+        <label class="check" style="margin-top:10px"><input type="checkbox" id="remWork" ${s.reminders.onlyWorkdays ? 'checked' : ''}> Nur an Arbeitstagen (nicht an Wochenenden, Feiertagen, Urlaub)</label>
+        <label class="check" style="margin-top:10px"><input type="checkbox" id="remSkip" ${s.reminders.skipIfEntered ? 'checked' : ''}> Nicht erinnern, wenn der Tag schon eingetragen ist</label></div>
+      <label class="check" style="margin-top:14px"><input type="checkbox" id="remOut" ${s.reminders.clockOut ? 'checked' : ''}> Ans Ausstempeln erinnern nach</label>
+      <div ${s.reminders.clockOut ? '' : 'hidden'}><input type="number" id="remOutH" min="1" max="16" step="0.5" value="${s.reminders.clockOutHours}" style="width:90px"> <span class="muted">Stunden Arbeit</span></div>
+      <label class="check" style="margin-top:14px"><input type="checkbox" id="remPause" ${s.reminders.pause ? 'checked' : ''}> Erinnern, wenn die Pause vorbei ist, nach</label>
+      <div ${s.reminders.pause ? '' : 'hidden'}><input type="number" id="remPauseM" min="5" max="120" step="5" value="${s.reminders.pauseMin}" style="width:90px"> <span class="muted">Minuten</span></div>
+      <div class="btns" style="margin-top:14px"><button class="full" onclick="testNotification()">Test-Benachrichtigung senden</button></div>
+      <p class="muted" id="remInfo" style="margin-bottom:0"></p></div>
     <div class="card"><h3>Zettel-Scan & Fotos</h3>
       <label class="check"><input type="checkbox" id="setSavePhotos" ${s.savePhotos ? 'checked' : ''}> Fotos gescannter Zettel unter „Fotos“ aufbewahren</label>
       <label class="check" style="margin-top:12px"><input type="checkbox" id="setCheckLaw" ${s.checkLaw ? 'checked' : ''}> Unter „Prüfen“ auch Arbeitszeitgesetz-Regeln anzeigen (Pausen, max. 10 Std., 11 Std. Ruhezeit)</label></div>
@@ -761,19 +928,27 @@ RENDER.settings = () => {
     <div class="card"><h3>App</h3><p class="muted">${window.APP_BUILD ? `Version 1.${APP_BUILD} (Build ${APP_BUILD})` : 'Entwicklerversion'}</p>
       <label class="check"><input type="checkbox" id="setAutoUpdate" ${s.autoUpdate ? 'checked' : ''}> Beim Start automatisch nach Updates suchen</label>
       <div class="btns" style="margin-top:12px"><button class="full" onclick="checkUpdate(true)">Nach Updates suchen</button></div></div>`;
+  showRemInfo();
 };
-$('v-settings').addEventListener('change', () => {
-  const s = db.settings;
-  s.target = parseFloat($('setTarget').value) || 0;
+$('v-settings').addEventListener('change', async ev => {
+  const s = db.settings, r = s.reminders, num = (id, f) => $(id) ? (parseFloat($(id).value) || 0) : f;
+  if ($('setTarget')) s.target = num('setTarget', s.target);
+  if ($('setWeekHours')) s.weekHours = num('setWeekHours', s.weekHours);
+  if ($('setStartBalance')) s.startBalance = num('setStartBalance', s.startBalance);
   s.autoBreak = $('setAutoBreak').checked;
-  s.startBalance = parseFloat($('setStartBalance').value) || 0;
-  s.vacation = parseFloat($('setVacation').value) || 0;
-  s.land = $('setLand').value;
+  s.vacation = num('setVacation', s.vacation);
   s.savePhotos = $('setSavePhotos').checked;
   s.checkLaw = $('setCheckLaw').checked;
   s.autoUpdate = $('setAutoUpdate').checked;
   s.days = [...document.querySelectorAll('#v-settings [data-day]:checked')].map(i => +i.dataset.day);
-  save(false); toast('Gespeichert');
+  const wantNotif = (!r.daily && $('remDaily').checked) || (!r.clockOut && $('remOut').checked) || (!r.pause && $('remPause').checked);
+  Object.assign(r, { daily: $('remDaily').checked, time: $('remTime').value || '18:00', onlyWorkdays: $('remWork').checked, skipIfEntered: $('remSkip').checked,
+    clockOut: $('remOut').checked, clockOutHours: num('remOutH', 9) || 9, pause: $('remPause').checked, pauseMin: num('remPauseM', 30) || 30 });
+  if (wantNotif && !(await ensureNotifPermission())) toast('Benachrichtigungen sind nicht erlaubt – bitte in den Android-Einstellungen der App freigeben');
+  else toast('Gespeichert');
+  // Felder, die andere Felder ein-/ausblenden, neu zeichnen
+  const rerender = ['remDaily', 'remOut', 'remPause', 'setWeekHours', 'setTarget'].includes(ev.target.id) || ev.target.dataset.day != null;
+  save(rerender);
 });
 
 // ================= Eintrag bearbeiten =================
@@ -933,15 +1108,76 @@ async function checkUpdate(manual) {
     const rel = await r.json();
     const latest = parseInt(String(rel.tag_name).replace(/\D/g, ''), 10) || 0;
     const apk = (rel.assets || []).find(a => a.name.endsWith('.apk'));
-    if (apk && latest > (window.APP_BUILD || 0)) {
+    if (apk && latest > (window.APP_BUILD || 0) && (manual || latest > (db.settings.skipBuild || 0))) {
       if (confirm(`Update verfügbar: Build ${latest}\n${rel.body || ''}\n\nJetzt herunterladen? Danach die Datei öffnen und „Installieren“ tippen – deine Daten bleiben erhalten.`)) location.href = apk.browser_download_url;
+      else { db.settings.skipBuild = latest; save(false); if (!manual) toast('Update später – unter Einstellungen → „Nach Updates suchen“'); }
     } else if (manual) toast('Du hast die neueste Version');
   } catch (e) { if (manual) toast('Update-Prüfung fehlgeschlagen: ' + e.message); }
+}
+
+// ================= Erinnerungen (lokale Benachrichtigungen) =================
+const native = () => !!window.Capacitor?.isNativePlatform?.();
+const LN = () => native() ? window.Capacitor.Plugins.LocalNotifications : null;
+async function ensureNotifPermission() {
+  const p = LN(); if (!p) return true; // im Browser nichts zu tun
+  try { let s = await p.checkPermissions(); if (s.display !== 'granted') s = await p.requestPermissions(); return s.display === 'granted'; }
+  catch (e) { return false; }
+}
+let _remTimer = null;
+function scheduleReminders() { clearTimeout(_remTimer); _remTimer = setTimeout(() => doScheduleReminders().catch(e => console.warn('Erinnerungen:', e)), 400); }
+// Plant die nächsten 30 Tage einzeln, damit Tage mit Einträgen, Urlaub oder Feiertag übersprungen werden können.
+function plannedReminders(now = Date.now()) {
+  const r = db.settings.reminders, list = [];
+  if (r.daily) {
+    const [h, m] = (r.time || '18:00').split(':').map(Number);
+    for (let i = 0; i < 30; i++) {
+      const k = addDays(todayKey(), i), d = parseKey(k); d.setHours(h, m, 0, 0);
+      if (d.getTime() <= now + 30000) continue;
+      const l = entriesOf(k);
+      if (r.onlyWorkdays && sollOf(k) === 0) continue;
+      if (r.skipIfEntered && l.length && l.every(e => e.end != null)) continue;
+      list.push({ id: 1000 + i, title: 'Arbeitszeit eintragen ⏱️', body: l.some(e => e.end == null) ? 'Du bist noch eingestempelt – Feierabend?' : 'Hast du heute deine Zeiten gestempelt oder den Zettel gescannt?', schedule: { at: d, allowWhileIdle: true } });
+    }
+  }
+  const e = active(), b = openBreak(e);
+  if (e && r.clockOut) { const at = e.start + r.clockOutHours * H + calc(e, now).brk; if (at > now) list.push({ id: 2000, title: 'Noch eingestempelt?', body: `Du arbeitest seit ${hm(e.start)} – ${dur(r.clockOutHours * H)} Std. erreicht. Ausstempeln nicht vergessen!`, schedule: { at: new Date(at), allowWhileIdle: true } }); }
+  if (b && r.pause) { const at = b.start + r.pauseMin * M; if (at > now) list.push({ id: 2001, title: 'Pause vorbei ☕', body: `Deine Pause läuft seit ${hm(b.start)} (${r.pauseMin} Min.).`, schedule: { at: new Date(at), allowWhileIdle: true } }); }
+  return list;
+}
+function showRemInfo(list = plannedReminders()) { if (!$('remInfo')) return; const n = list.find(x => x.id < 2000); $('remInfo').textContent = n ? `Nächste Erinnerung: ${shortDate(dateKey(n.schedule.at))} um ${hm(n.schedule.at)}` : (db.settings.reminders.daily ? 'Keine Erinnerung in den nächsten 30 Tagen geplant' : ''); }
+async function doScheduleReminders() {
+  const list = plannedReminders();
+  showRemInfo(list);
+  const p = LN(); if (!p) return;
+  const pend = await p.getPending();
+  if (pend.notifications?.length) await p.cancel({ notifications: pend.notifications.map(n => ({ id: n.id })) });
+  if (!list.length) return;
+  const perm = await p.checkPermissions(); if (perm.display !== 'granted') return;
+  await p.schedule({ notifications: list });
+}
+async function testNotification() {
+  const p = LN(); if (!p) { toast('Benachrichtigungen gehen nur in der installierten App'); return; }
+  if (!(await ensureNotifPermission())) { toast('Benachrichtigungen sind nicht erlaubt – bitte in den Android-Einstellungen freigeben'); return; }
+  await p.schedule({ notifications: [{ id: 3000, title: 'Stempeluhr', body: 'So sehen deine Erinnerungen aus ✓', schedule: { at: new Date(Date.now() + 3000), allowWhileIdle: true } }] });
+  toast('Kommt in 3 Sekunden …');
+}
+
+// ================= Android: Zurück-Taste =================
+if (native() && window.Capacitor.Plugins.App) {
+  const CapApp = window.Capacitor.Plugins.App;
+  CapApp.addListener('backButton', () => {
+    const dlg = document.querySelector('dialog[open]');
+    if (dlg) { dlg.close(); return; }
+    if (ui.view === 'tag') { CapApp.minimizeApp ? CapApp.minimizeApp() : CapApp.exitApp(); return; }
+    if (ROOT.includes(ui.view)) go('tag'); else history.back();
+  });
+  CapApp.addListener('resume', () => { _idx = null; if (!document.querySelector('dialog[open]')) render(); scheduleReminders(); });
 }
 
 // ================= Start =================
 if (!location.hash) history.replaceState(null, '', '#tag');
 show();
+scheduleReminders();
 setInterval(() => { if (ui.view === 'tag' && !document.querySelector('dialog[open]')) render(); }, 15000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && !document.querySelector('dialog[open]')) { if (ui.view === 'tag' && ui.date < todayKey() && active()) ui.date = todayKey(); render(); } });
 if (db.settings.autoUpdate && window.APP_BUILD) setTimeout(() => checkUpdate(false), 3000);

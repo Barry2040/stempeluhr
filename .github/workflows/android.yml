@@ -24,6 +24,10 @@ jobs:
       - name: Build-Nummer setzen
         run: echo "window.APP_BUILD = ${{ github.run_number }};" > www/version.js
       - run: npx cap add android
+      - name: App-Icon und Benachrichtigungs-Symbol
+        run: |
+          npx capacitor-assets generate --android --iconBackgroundColor '#0f766e' --iconBackgroundColorDark '#0f766e'
+          cp -r android-res/* android/app/src/main/res/
       - run: npx cap sync android
       # Fester Signierschlüssel, damit Updates über die alte Version installiert werden können (Daten bleiben erhalten)
       - name: Signierschlüssel einrichten

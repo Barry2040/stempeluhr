@@ -33,7 +33,8 @@
 | 📷 **Zettel-Scan** | Stundenzettel (Bon vom Zeiterfassungs-Terminal) fotografieren – Arbeitsblöcke und Pausen werden **offline** erkannt, mit der gedruckten Tagessumme gegengeprüft und übernommen |
 | 🔁 **Täglich neu scannen** | Wächst dein Zettel jeden Tag um einen Tag, scannst du einfach den ganzen Zettel – vorhandene Tage werden übersprungen, geänderte ersetzt |
 | ⭐ **Besondere Tage** | Urlaub, Krank, Feiertag, Schule, Sonderurlaub, Überstundenabbau – auch als Zeitraum und als halber Tag |
-| 🎉 **Feiertage** | Gesetzliche Feiertage aller 16 Bundesländer werden automatisch berücksichtigt |
+| 🏖️ **Urlaubskonto** | Jahresanspruch und Resturlaub aus dem Vorjahr je Jahr hinterlegen; genommen, geplant und verfügbar auf einen Blick; Urlaub als Zeitraum eintragen – Wochenenden und Feiertage zählen nicht mit |
+| 🎉 **Feiertage** | Bundesland im Menü wählen – die gesetzlichen Feiertage werden angezeigt und automatisch berücksichtigt, inkl. Tipps für **Brückentage** |
 | 🏷️ **Tags** | Einträge nach Projekt, Baustelle oder Kunde markieren – farbig, durchsuchbar, im Diagramm ausgewertet |
 | 🔍 **Suchen** | Nach Notiz, Tag, Datum oder Wochentag suchen, mit Zeitraum-Filter und Summe |
 | 📊 **Diagramm** | Ist gegen Soll je Woche, Monat oder Jahr, plus Verteilung nach Tags |
@@ -41,17 +42,19 @@
 | 🖼️ **Fotos** | Gescannte Zettel und eigene Fotos werden dem Tag zugeordnet und bleiben auf dem Handy |
 | 📤 **Auszug** | Beliebiger Zeitraum als Bericht (HTML, druckbar als PDF) oder CSV für Excel, Tag als Text teilen |
 | 🗑️ **Papierkorb** | Gelöschte Einträge und besondere Tage 30 Tage lang wiederherstellbar |
-| ⚖️ **Soll / Ist / Saldo** | Sollstunden und Arbeitstage einstellen, Überstundenkonto über alle Monate, Startsaldo für alte Überstunden |
+| ⚖️ **Soll / Ist / Saldo** | Soll pro Tag oder pro Woche (z. B. 35, 40, 45 Std.), Arbeitstage wählen; Stundenkonto fortlaufend (mit Startsaldo) oder **jede Woche neu ab 0** – so siehst du sofort, ob dein Wochensoll erreicht ist |
+| 🔔 **Erinnerungen** | Tägliche Benachrichtigung zur gewünschten Uhrzeit, falls du noch nichts eingetragen hast (nur an Arbeitstagen); optional „Noch eingestempelt?“ nach X Stunden und „Pause vorbei“ nach X Minuten |
 | ☕ **Mindestpause** | Optional: gesetzliche Pause (30 Min. ab 6 Std., 45 Min. ab 9 Std.) automatisch abziehen |
 | 💾 **Backup** | Alle Daten als JSON sichern und wiederherstellen |
-| 🔄 **Updates** | Die App meldet sich, wenn es eine neue Version gibt – ein Tipp lädt sie herunter |
+| 🔄 **Updates** | Die App meldet sich, wenn es eine neue Version gibt – ein Tipp lädt sie herunter; „Später“ fragt erst beim nächsten Build wieder |
 | 🌙 **Hell & Dunkel** | Folgt automatisch dem Design deines Handys |
 
 ## 🚀 Loslegen
 
 1. **[Stempeluhr.apk](https://github.com/Barry2040/stempeluhr/releases/latest/download/Stempeluhr.apk)** auf dem Handy herunterladen.
 2. Datei öffnen und **„Installation aus unbekannten Quellen“** für Browser bzw. Dateimanager erlauben.
-3. In den **Einstellungen** Sollstunden pro Tag, Arbeitstage, Urlaubsanspruch und Bundesland eintragen – fertig.
+3. In den **Einstellungen** Sollstunden (pro Tag oder Woche) und Arbeitstage eintragen, im Menü unter **Feiertage** dein Bundesland und unter **Urlaub** deinen Jahresanspruch.
+4. Unter **Einstellungen → Erinnerungen** die tägliche Benachrichtigung einschalten und Benachrichtigungen erlauben – fertig.
 
 > [!TIP]
 > **Updates:** Gibt es eine neue Version, fragt die App beim Start, ob sie sie herunterladen soll. Download öffnen,
@@ -79,10 +82,11 @@ Status (**neu**, **schon vorhanden**, **ersetzt vorhandene …**) und wählst pe
 
 | Bereich | Status |
 |---|---|
-| Stempeln, Pausen, Nachtragen, alle Ansichten und Werkzeuge, Saldo, Feiertage | ✅ getestet (Browser) |
+| Stempeln, Pausen, Nachtragen, alle Ansichten und Werkzeuge, Saldo, Wochenkonto, Urlaub, Feiertage | ✅ getestet (Browser) |
+| Planung der Erinnerungen | ✅ getestet (Browser, Benachrichtigungen simuliert) |
 | Erkennung des Zettel-Formats inkl. typischer OCR-Fehler (O/0, l/1, ;/:) | ✅ getestet (mit Text eines echten Zettels) |
 | Zettel-Scan mit Kamera auf dem Handy | ungetestet |
-| CSV-Export, Bericht, Backup, Fotos und Update-Download in der App | ungetestet |
+| CSV-Export, Bericht, Backup, Fotos, Update-Download, Benachrichtigungen und Zurück-Taste in der App | ungetestet |
 
 ## 🔒 Datenschutz
 
@@ -93,6 +97,7 @@ sind sie weg – darum gibt es das Backup unter **Einstellungen → Daten** (Fot
   allerdings anonyme Nutzungs- und Leistungsdaten an Google.
 - **Update-Prüfung:** Beim Start fragt die App bei der GitHub-API nach der neuesten Version; dabei sieht GitHub deine IP-Adresse.
   Lässt sich in den Einstellungen abschalten.
+- **Berechtigungen:** Benachrichtigungen (nur wenn du Erinnerungen einschaltest) und Wecker/Erinnerungen für pünktliche Benachrichtigungen. Kamera läuft über die normale Foto-Auswahl.
 
 ## 👩‍💻 Für Entwickler
 
@@ -116,6 +121,6 @@ sind sie weg – darum gibt es das Backup unter **Einstellungen → Daten** (Fot
 
 | Projekt | Wofür | Lizenz |
 |---|---|---|
-| [Capacitor](https://capacitorjs.com) | Web-App als Android-App, Dateien & Teilen | MIT |
+| [Capacitor](https://capacitorjs.com) | Web-App als Android-App, Dateien, Teilen, Benachrichtigungen, Zurück-Taste | MIT |
 | [@capacitor-mlkit/text-recognition](https://github.com/capawesome-team/capacitor-mlkit) | Texterkennung in der App | Apache-2.0 |
 | [Google ML Kit Text Recognition](https://developers.google.com/ml-kit/vision/text-recognition/v2) | Texterkennung auf dem Gerät | [ML Kit Terms](https://developers.google.com/ml-kit/terms) |

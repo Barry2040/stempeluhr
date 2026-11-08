@@ -1,5 +1,11 @@
 {
   "appId": "de.barry2040.stempeluhr",
   "appName": "Stempeluhr",
-  "webDir": "www"
+  "webDir": "www",
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_clock",
+      "iconColor": "#0f766e"
+    }
+  }
 }
