@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f766e">
+<title>Stempeluhr</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+:root {
+  --bg: #f4f6f8; --card: #fff; --text: #111827; --muted: #6b7280; --line: #e5e7eb;
+  --accent: #0f766e; --accent-2: #14b8a6; --warn: #d97706; --danger: #dc2626; --ok: #16a34a;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0b1114; --card: #151d22; --text: #e5e7eb; --muted: #9ca3af; --line: #253038;
+    --accent: #14b8a6; --accent-2: #2dd4bf; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+body { padding: env(safe-area-inset-top) 0 calc(72px + env(safe-area-inset-bottom)); }
+header { padding: 16px 16px 4px; display: flex; justify-content: space-between; align-items: baseline; }
+header h1 { font-size: 20px; margin: 0; }
+header span { color: var(--muted); font-size: 14px; }
+main { padding: 8px 16px; max-width: 560px; margin: 0 auto; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin-bottom: 12px; }
+.status { text-align: center; }
+.status .label { font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+.status .big { font-size: 52px; font-weight: 700; font-variant-numeric: tabular-nums; margin: 6px 0; }
+.status .sub { color: var(--muted); font-variant-numeric: tabular-nums; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
+.dot.work { background: var(--ok); } .dot.pause { background: var(--warn); }
+.btns { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; margin-top: 16px; }
+button { font: inherit; border: 0; border-radius: 12px; padding: 14px; font-weight: 600; cursor: pointer;
+  background: var(--line); color: var(--text); }
+button.primary { background: var(--accent); color: #fff; }
+button.warn { background: var(--warn); color: #fff; }
+button.danger { background: var(--danger); color: #fff; }
+button.ghost { background: transparent; color: var(--accent); padding: 8px; }
+button.full { grid-column: 1 / -1; font-size: 18px; padding: 18px; }
+button:disabled { opacity: .4; }
+.row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.row:last-child { border-bottom: 0; }
+.row .t { font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); font-size: 14px; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
+.stats b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+.stats span { font-size: 12px; color: var(--muted); }
+.pos { color: var(--ok); } .neg { color: var(--danger); }
+.monthnav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.monthnav h2 { font-size: 18px; margin: 0; }
+.day { cursor: pointer; }
+.day h3 { margin: 0; font-size: 15px; }
+.chip { font-size: 12px; background: var(--line); border-radius: 999px; padding: 2px 8px; }
+nav { position: fixed; bottom: 0; left: 0; right: 0; background: var(--card); border-top: 1px solid var(--line);
+  display: grid; grid-template-columns: repeat(3, 1fr); padding-bottom: env(safe-area-inset-bottom); }
+nav button { background: none; border-radius: 0; color: var(--muted); padding: 14px 4px; font-size: 13px; }
+nav button.active { color: var(--accent); }
+nav svg { display: block; margin: 0 auto 2px; width: 22px; height: 22px; }
+.view { display: none; } .view.active { display: block; }
+label { display: block; font-size: 14px; color: var(--muted); margin: 12px 0 4px; }
+input, select, textarea { font: inherit; width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--text); }
+.inline { display: flex; gap: 8px; align-items: center; }
+.inline > * { flex: 1; }
+.weekdays { display: flex; gap: 6px; flex-wrap: wrap; }
+.weekdays label { margin: 0; display: flex; align-items: center; gap: 4px; color: var(--text);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.weekdays input { width: auto; }
+.check { display: flex; gap: 10px; align-items: center; color: var(--text); }
+.check input { width: auto; }
+dialog { border: 0; border-radius: 16px; padding: 0; width: min(520px, calc(100vw - 32px));
+  background: var(--card); color: var(--text); }
+dialog::backdrop { background: rgba(0,0,0,.5); }
+dialog form { padding: 16px; }
+dialog h2 { margin: 0 0 4px; font-size: 18px; }
+.breakrow { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+.breakrow input { flex: 1; }
+.breakrow button { padding: 8px 12px; }
+.actions { display: flex; gap: 8px; margin-top: 16px; }
+.actions button { flex: 1; }
+.toast { position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); background: var(--text); color: var(--bg);
+  padding: 10px 16px; border-radius: 10px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.toast.show { opacity: 1; }
+.empty { text-align: center; color: var(--muted); padding: 24px 0; }
+</style>
+</head>
+<body>
+<header><h1>Stempeluhr</h1><span id="today"></span></header>
+
+<main>
+  <!-- HEUTE -->
+  <section class="view active" id="v-heute">
+    <div class="card status">
+      <div class="label"><span class="dot" id="dot"></span><span id="stateLabel">Nicht eingestempelt</span></div>
+      <div class="big" id="bigTime">0:00</div>
+      <div class="sub" id="subInfo">Heute gearbeitet</div>
+      <div class="btns" id="btns"></div>
+    </div>
+    <div class="card">
+      <div class="stats">
+        <div><b id="sToday">0:00</b><span>Heute</span></div>
+        <div><b id="sWeek">0:00</b><span>Diese Woche</span></div>
+        <div><b id="sBalance">0:00</b><span>Saldo Monat</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="row"><b>Heutige Einträge</b><button class="ghost" onclick="openEdit(null, todayKey())">+ Nachtragen</button></div>
+      <div id="todayList"></div>
+    </div>
+  </section>
+
+  <!-- VERLAUF -->
+  <section class="view" id="v-verlauf">
+    <div class="monthnav">
+      <button class="ghost" onclick="shiftMonth(-1)">&#8249; Zurück</button>
+      <h2 id="monthTitle"></h2>
+      <button class="ghost" onclick="shiftMonth(1)">Weiter &#8250;</button>
+    </div>
+    <div class="card">
+      <div class="stats">
+        <div><b id="mIst">0:00</b><span>Ist</span></div>
+        <div><b id="mSoll">0:00</b><span>Soll</span></div>
+        <div><b id="mSaldo">0:00</b><span>Saldo</span></div>
+      </div>
+      <p class="muted" style="text-align:center;margin:10px 0 0" id="mInfo"></p>
+    </div>
+    <div class="card" id="dayList"></div>
+    <div class="btns">
+      <button onclick="openEdit(null, todayKey())">+ Eintrag hinzufügen</button>
+      <button onclick="exportCSV()">Monat als CSV</button>
+    </div>
+  </section>
+
+  <!-- EINSTELLUNGEN -->
+  <section class="view" id="v-settings">
+    <div class="card">
+      <b>Arbeitszeit</b>
+      <label>Sollstunden pro Arbeitstag</label>
+      <input type="number" id="setTarget" step="0.25" min="0" max="24">
+      <label>Arbeitstage</label>
+      <div class="weekdays" id="setDays"></div>
+      <label class="check" style="margin-top:16px"><input type="checkbox" id="setAutoBreak">
+        Gesetzliche Mindestpause automatisch abziehen (30 Min. ab 6 Std., 45 Min. ab 9 Std.)</label>
+      <label>Startsaldo (Überstunden aus der Zeit vor der App, z.B. 2.5 oder -1)</label>
+      <input type="number" id="setStartBalance" step="0.25">
+    </div>
+    <div class="card">
+      <b>Daten</b>
+      <p class="muted">Alle Daten bleiben nur auf deinem Handy. Mach ab und zu ein Backup &ndash; beim Deinstallieren der App sind sie sonst weg.</p>
+      <div class="btns">
+        <button onclick="exportBackup()">Backup speichern</button>
+        <button onclick="document.getElementById('importFile').click()">Backup laden</button>
+        <button class="danger full" onclick="wipeAll()">Alle Daten löschen</button>
+      </div>
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
+    </div>
+  </section>
+</main>
+
+<nav>
+  <button class="active" data-v="heute"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Heute</button>
+  <button data-v="verlauf"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Verlauf</button>
+  <button data-v="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="currentColor"/><circle cx="15" cy="12" r="2" fill="currentColor"/><circle cx="7" cy="18" r="2" fill="currentColor"/></svg>Einstellungen</button>
+</nav>
+
+<dialog id="editDlg">
+  <form method="dialog" id="editForm">
+    <h2 id="editTitle">Eintrag</h2>
+    <label>Datum</label>
+    <input type="date" id="eDate" required>
+    <div class="inline">
+      <div><label>Beginn</label><input type="time" id="eStart" required></div>
+      <div><label>Ende</label><input type="time" id="eEnd"></div>
+    </div>
+    <label>Pausen</label>
+    <div id="eBreaks"></div>
+    <button type="button" class="ghost" onclick="addBreakRow()">+ Pause hinzufügen</button>
+    <label>Notiz</label>
+    <input type="text" id="eNote" placeholder="optional, z.B. Projekt oder Ort">
+    <p class="muted" id="eHint"></p>
+    <div class="actions">
+      <button type="button" class="danger" id="eDelete">Löschen</button>
+      <button type="button" onclick="editDlg.close()">Abbrechen</button>
+      <button type="submit" class="primary">Speichern</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ---------- Speicher ----------
+const KEY = 'stempeluhr.v1';
+const DEFAULTS = { entries: [], settings: { target: 8, days: [1,2,3,4,5], autoBreak: false, startBalance: 0 } };
+let db = load();
+function load() {
+  try {
+    const d = JSON.parse(localStorage.getItem(KEY));
+    if (d && Array.isArray(d.entries)) return { entries: d.entries, settings: { ...DEFAULTS.settings, ...d.settings } };
+  } catch (e) {}
+  return structuredClone(DEFAULTS);
+}
+function save() { localStorage.setItem(KEY, JSON.stringify(db)); render(); }
+
+// ---------- Hilfen ----------
+const H = 3600000, M = 60000;
+const pad = n => String(n).padStart(2, '0');
+const dateKey = ts => { const d = new Date(ts); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; };
+const todayKey = () => dateKey(Date.now());
+const hm = ts => { const d = new Date(ts); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+function dur(ms, signed = false) {
+  const neg = ms < 0; ms = Math.abs(ms);
+  const tot = Math.floor(ms / M);
+  const s = `${Math.floor(tot / 60)}:${pad(tot % 60)}`;
+  return signed ? (neg ? '−' : '+') + s : (neg ? '−' : '') + s;
+}
+const fromKeyTime = (key, t) => { const [y,mo,d] = key.split('-').map(Number); const [h,mi] = t.split(':').map(Number); return new Date(y, mo-1, d, h, mi).getTime(); };
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const WD = ['So','Mo','Di','Mi','Do','Fr','Sa'];
+const MONTHS = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2200); }
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// ---------- Berechnung ----------
+function calc(e, now = Date.now()) {
+  const end = e.end ?? now;
+  const gross = Math.max(0, end - e.start);
+  let brk = 0;
+  for (const b of e.breaks) brk += Math.max(0, Math.min(b.end ?? now, end) - Math.max(b.start, e.start));
+  let net = gross - brk, effBreak = brk;
+  if (db.settings.autoBreak) {
+    const thr = net > 9*H ? 9*H : net > 6*H ? 6*H : 0;
+    const req = thr === 9*H ? 45*M : thr === 6*H ? 30*M : 0;
+    if (brk < req) { net = Math.max(gross - req, thr); effBreak = gross - net; }
+  }
+  return { gross, brk: effBreak, net };
+}
+const active = () => db.entries.find(e => e.end == null);
+const openBreak = e => e?.breaks.find(b => b.end == null);
+function netOfDay(key, now) { return db.entries.filter(e => dateKey(e.start) === key).reduce((s, e) => s + calc(e, now).net, 0); }
+function isWorkday(d) { return db.settings.days.includes(d.getDay()); }
+function monthStats(y, m, now = Date.now()) {
+  const days = new Date(y, m+1, 0).getDate();
+  let ist = 0, soll = 0, sollToDate = 0, istToDate = 0;
+  const today = todayKey();
+  const firstKey = db.entries.length ? dateKey(Math.min(...db.entries.map(e => e.start))) : today;
+  for (let d = 1; d <= days; d++) {
+    const dt = new Date(y, m, d), k = dateKey(dt.getTime());
+    const n = netOfDay(k, now), s = isWorkday(dt) ? db.settings.target * H : 0;
+    ist += n; soll += s;
+    if (k <= today && k >= firstKey) { sollToDate += s; istToDate += n; }
+  }
+  return { ist, soll, saldo: istToDate - sollToDate };
+}
+function totalBalance(now = Date.now()) {
+  // Saldo über alle Tage vom ersten Eintrag bis heute + Startsaldo
+  let bal = (db.settings.startBalance || 0) * H;
+  if (!db.entries.length) return bal;
+  const first = new Date(Math.min(...db.entries.map(e => e.start))); first.setHours(0,0,0,0);
+  const today = todayKey();
+  for (let d = new Date(first); dateKey(d.getTime()) <= today; d.setDate(d.getDate() + 1)) {
+    bal += netOfDay(dateKey(d.getTime()), now) - (isWorkday(d) ? db.settings.target * H : 0);
+  }
+  return bal;
+}
+
+// ---------- Stempeln ----------
+function clockIn() { db.entries.push({ id: uid(), start: Date.now(), end: null, breaks: [], note: '' }); save(); toast('Eingestempelt'); }
+function clockOut() { const e = active(); if (!e) return; const now = Date.now(); const b = openBreak(e); if (b) b.end = now; e.end = now; save(); toast('Ausgestempelt – ' + dur(calc(e).net) + ' gearbeitet'); }
+function breakStart() { const e = active(); if (!e) return; e.breaks.push({ start: Date.now(), end: null }); save(); toast('Pause gestartet'); }
+function breakEnd() { const b = openBreak(active()); if (!b) return; b.end = Date.now(); save(); toast('Pause beendet'); }
+
+// ---------- Anzeige ----------
+let viewMonth = new Date(); viewMonth.setDate(1);
+function render() {
+  const now = Date.now(), e = active(), b = openBreak(e);
+  document.getElementById('today').textContent = new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
+  const dot = document.getElementById('dot'), lbl = document.getElementById('stateLabel');
+  const big = document.getElementById('bigTime'), sub = document.getElementById('subInfo'), btns = document.getElementById('btns');
+  const todayNet = netOfDay(todayKey(), now);
+  let mode = e ? (b ? 'pause' : 'work') : 'off';
+  if (btns.dataset.mode !== mode) {
+    btns.dataset.mode = mode;
+    btns.innerHTML = mode === 'off'
+      ? `<button class="primary full" onclick="clockIn()">Einstempeln</button>`
+      : mode === 'work'
+        ? `<button class="warn" onclick="breakStart()">Pause</button><button class="danger" onclick="clockOut()">Ausstempeln</button>`
+        : `<button class="primary" onclick="breakEnd()">Pause beenden</button><button class="danger" onclick="clockOut()">Ausstempeln</button>`;
+  }
+  dot.className = 'dot ' + (mode === 'off' ? '' : mode);
+  if (mode === 'off') { lbl.textContent = 'Nicht eingestempelt'; big.textContent = dur(todayNet); sub.textContent = 'Heute gearbeitet'; }
+  else if (mode === 'work') { lbl.textContent = 'Bei der Arbeit seit ' + hm(e.start); big.textContent = dur(todayNet); sub.textContent = 'Heute gearbeitet · Pause ' + dur(calc(e, now).brk); }
+  else { lbl.textContent = 'Pause seit ' + hm(b.start); big.textContent = dur(now - b.start); sub.textContent = 'Heute gearbeitet: ' + dur(todayNet); }
+
+  // Woche (Mo–So)
+  const ws = new Date(); ws.setHours(0,0,0,0); ws.setDate(ws.getDate() - ((ws.getDay() + 6) % 7));
+  let week = 0; for (let i = 0; i < 7; i++) { const d = new Date(ws); d.setDate(ws.getDate() + i); week += netOfDay(dateKey(d.getTime()), now); }
+  document.getElementById('sToday').textContent = dur(todayNet);
+  document.getElementById('sWeek').textContent = dur(week);
+  const t = new Date(), ms = monthStats(t.getFullYear(), t.getMonth(), now);
+  const sb = document.getElementById('sBalance'); sb.textContent = dur(ms.saldo, true); sb.className = ms.saldo < 0 ? 'neg' : 'pos';
+
+  // Heutige Liste
+  const todays = db.entries.filter(x => dateKey(x.start) === todayKey()).sort((a, c) => a.start - c.start);
+  document.getElementById('todayList').innerHTML = todays.length ? todays.map(entryRow).join('') : '<div class="empty">Noch nichts gestempelt</div>';
+
+  renderMonth(now);
+}
+function entryRow(e) {
+  const c = calc(e);
+  const breaks = e.breaks.map(b => `${hm(b.start)}–${b.end ? hm(b.end) : '…'}`).join(', ');
+  return `<div class="row day" onclick="openEdit('${e.id}')">
+    <div><div class="t">${hm(e.start)} – ${e.end ? hm(e.end) : '<span class="chip">läuft</span>'}</div>
+    <div class="muted">${breaks ? 'Pause ' + breaks : 'Keine Pause'}${e.note ? ' · ' + esc(e.note) : ''}</div></div>
+    <b class="t">${dur(c.net)}</b></div>`;
+}
+function renderMonth(now) {
+  const y = viewMonth.getFullYear(), m = viewMonth.getMonth();
+  document.getElementById('monthTitle').textContent = `${MONTHS[m]} ${y}`;
+  const s = monthStats(y, m, now);
+  document.getElementById('mIst').textContent = dur(s.ist);
+  document.getElementById('mSoll').textContent = dur(s.soll);
+  const ms = document.getElementById('mSaldo'); ms.textContent = dur(s.saldo, true); ms.className = s.saldo < 0 ? 'neg' : 'pos';
+  const tb = totalBalance(now);
+  document.getElementById('mInfo').innerHTML = `Saldo bis heute · Gesamt-Überstundenkonto: <b class="${tb < 0 ? 'neg' : 'pos'}">${dur(tb, true)}</b>`;
+  const groups = {};
+  for (const e of db.entries) { const d = new Date(e.start); if (d.getFullYear() === y && d.getMonth() === m) (groups[dateKey(e.start)] ||= []).push(e); }
+  const keys = Object.keys(groups).sort().reverse();
+  document.getElementById('dayList').innerHTML = keys.length ? keys.map(k => {
+    const es = groups[k].sort((a, c) => a.start - c.start);
+    const tot = es.reduce((a, e) => a + calc(e, now).net, 0), brk = es.reduce((a, e) => a + calc(e, now).brk, 0);
+    const d = new Date(es[0].start);
+    return `<div style="margin-bottom:8px"><div class="row"><h3>${WD[d.getDay()]}, ${d.getDate()}.${d.getMonth()+1}.</h3>
+      <span class="muted">Pause ${dur(brk)} · <b style="color:var(--text)">${dur(tot)}</b></span></div>${es.map(entryRow).join('')}</div>`;
+  }).join('') : '<div class="empty">Keine Einträge in diesem Monat</div>';
+}
+function shiftMonth(n) { viewMonth.setMonth(viewMonth.getMonth() + n); render(); }
+
+// ---------- Bearbeiten ----------
+const editDlg = document.getElementById('editDlg');
+let editingId = null;
+function addBreakRow(s = '', e = '') {
+  const div = document.createElement('div'); div.className = 'breakrow';
+  div.innerHTML = `<input type="time" value="${s}"><span>–</span><input type="time" value="${e}"><button type="button" onclick="this.parentNode.remove()">✕</button>`;
+  document.getElementById('eBreaks').appendChild(div);
+}
+function openEdit(id, key) {
+  editingId = id;
+  const e = id ? db.entries.find(x => x.id === id) : null;
+  document.getElementById('editTitle').textContent = e ? 'Eintrag bearbeiten' : 'Eintrag nachtragen';
+  document.getElementById('eDate').value = e ? dateKey(e.start) : key;
+  document.getElementById('eStart').value = e ? hm(e.start) : '08:00';
+  document.getElementById('eEnd').value = e ? (e.end ? hm(e.end) : '') : '16:30';
+  document.getElementById('eNote').value = e?.note || '';
+  document.getElementById('eBreaks').innerHTML = '';
+  if (e) e.breaks.forEach(b => addBreakRow(hm(b.start), b.end ? hm(b.end) : ''));
+  else addBreakRow('12:00', '12:30');
+  document.getElementById('eHint').textContent = 'Endet die Schicht nach Mitternacht, wird das Ende automatisch auf den Folgetag gelegt. Leeres Ende = läuft noch.';
+  document.getElementById('eDelete').style.display = e ? '' : 'none';
+  editDlg.showModal();
+}
+document.getElementById('editForm').addEventListener('submit', ev => {
+  ev.preventDefault();
+  const key = document.getElementById('eDate').value;
+  const start = fromKeyTime(key, document.getElementById('eStart').value);
+  const endV = document.getElementById('eEnd').value;
+  const fix = t => (t < start ? t + 24*H : t); // über Mitternacht
+  const end = endV ? fix(fromKeyTime(key, endV)) : null;
+  if (end == null && db.entries.some(x => x.end == null && x.id !== editingId)) { toast('Es läuft schon ein anderer Eintrag'); return; }
+  const breaks = [];
+  for (const r of document.querySelectorAll('#eBreaks .breakrow')) {
+    const [a, b] = r.querySelectorAll('input');
+    if (!a.value) continue;
+    const bs = fix(fromKeyTime(key, a.value)), be = b.value ? fix(fromKeyTime(key, b.value)) : null;
+    if (be != null && be < bs) { toast('Pausenende liegt vor Pausenbeginn'); return; }
+    if (be == null && end != null) { toast('Pause braucht ein Ende'); return; }
+    breaks.push({ start: bs, end: be });
+  }
+  breaks.sort((x, y) => x.start - y.start);
+  const note = document.getElementById('eNote').value.trim();
+  if (editingId) Object.assign(db.entries.find(x => x.id === editingId), { start, end, breaks, note });
+  else db.entries.push({ id: uid(), start, end, breaks, note });
+  editDlg.close(); save(); toast('Gespeichert');
+});
+document.getElementById('eDelete').onclick = () => {
+  if (!confirm('Eintrag wirklich löschen?')) return;
+  db.entries = db.entries.filter(x => x.id !== editingId); editDlg.close(); save(); toast('Gelöscht');
+};
+
+// ---------- Einstellungen ----------
+function renderSettings() {
+  document.getElementById('setTarget').value = db.settings.target;
+  document.getElementById('setAutoBreak').checked = db.settings.autoBreak;
+  document.getElementById('setStartBalance').value = db.settings.startBalance || 0;
+  document.getElementById('setDays').innerHTML = [1,2,3,4,5,6,0].map(d =>
+    `<label><input type="checkbox" value="${d}" ${db.settings.days.includes(d) ? 'checked' : ''}>${WD[d]}</label>`).join('');
+}
+document.getElementById('v-settings').addEventListener('change', ev => {
+  if (ev.target.id === 'importFile') return;
+  db.settings.target = parseFloat(document.getElementById('setTarget').value) || 0;
+  db.settings.autoBreak = document.getElementById('setAutoBreak').checked;
+  db.settings.startBalance = parseFloat(document.getElementById('setStartBalance').value) || 0;
+  db.settings.days = [...document.querySelectorAll('#setDays input:checked')].map(i => +i.value);
+  save(); toast('Einstellungen gespeichert');
+});
+
+// ---------- Export / Backup ----------
+async function saveFile(name, text, mime) {
+  const C = window.Capacitor;
+  if (C?.isNativePlatform?.()) {
+    const { Filesystem, Share } = C.Plugins;
+    const r = await Filesystem.writeFile({ path: name, data: text, directory: 'CACHE', encoding: 'utf8' });
+    await Share.share({ title: name, url: r.uri, dialogTitle: 'Datei speichern / teilen' });
+    return;
+  }
+  const file = new File([text], name, { type: mime });
+  if (navigator.canShare?.({ files: [file] })) { try { await navigator.share({ files: [file], title: name }); return; } catch (e) { if (e.name === 'AbortError') return; } }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+function exportCSV() {
+  const y = viewMonth.getFullYear(), m = viewMonth.getMonth();
+  const num = ms => (ms / H).toFixed(2).replace('.', ',');
+  const rows = [['Datum','Wochentag','Beginn','Ende','Pausen','Pause (Std)','Arbeitszeit (Std)','Arbeitszeit','Notiz']];
+  db.entries.filter(e => { const d = new Date(e.start); return d.getFullYear() === y && d.getMonth() === m; })
+    .sort((a, b) => a.start - b.start).forEach(e => {
+      const c = calc(e), d = new Date(e.start);
+      rows.push([d.toLocaleDateString('de-DE'), WD[d.getDay()], hm(e.start), e.end ? hm(e.end) : '',
+        e.breaks.map(b => `${hm(b.start)}-${b.end ? hm(b.end) : ''}`).join(' '), num(c.brk), num(c.net), dur(c.net), e.note || '']);
+    });
+  const s = monthStats(y, m);
+  rows.push([], ['Summe Ist', '', '', '', '', '', num(s.ist), dur(s.ist)], ['Soll', '', '', '', '', '', num(s.soll), dur(s.soll)]);
+  const csv = '﻿' + rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\r\n');
+  saveFile(`Arbeitszeiten_${y}-${pad(m+1)}.csv`, csv, 'text/csv').catch(e => toast('Export fehlgeschlagen: ' + e.message));
+}
+function exportBackup() {
+  saveFile(`Stempeluhr_Backup_${todayKey()}.json`, JSON.stringify(db, null, 1), 'application/json').catch(e => toast('Backup fehlgeschlagen: ' + e.message));
+}
+document.getElementById('importFile').addEventListener('change', async ev => {
+  const f = ev.target.files[0]; ev.target.value = '';
+  if (!f) return;
+  try {
+    const d = JSON.parse(await f.text());
+    if (!Array.isArray(d.entries)) throw new Error('Keine gültige Backup-Datei');
+    if (!confirm(`Backup mit ${d.entries.length} Einträgen laden? Aktuelle Daten werden ersetzt.`)) return;
+    db = { entries: d.entries, settings: { ...DEFAULTS.settings, ...d.settings } };
+    save(); renderSettings(); toast('Backup geladen');
+  } catch (e) { toast('Fehler: ' + e.message); }
+});
+function wipeAll() {
+  if (!confirm('Wirklich ALLE Einträge löschen?') || !confirm('Sicher? Das kann nicht rückgängig gemacht werden.')) return;
+  db = structuredClone(DEFAULTS); save(); renderSettings(); toast('Alles gelöscht');
+}
+
+// ---------- Navigation ----------
+document.querySelectorAll('nav button').forEach(btn => btn.onclick = () => {
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b === btn));
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'v-' + btn.dataset.v));
+  if (btn.dataset.v === 'settings') renderSettings();
+  render(); window.scrollTo(0, 0);
+});
+
+render();
+setInterval(render, 15000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>

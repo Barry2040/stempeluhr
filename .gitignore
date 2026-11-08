@@ -1,0 +1,4 @@
+node_modules/
+android/
+*.p12
+*.keystore

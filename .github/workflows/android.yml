@@ -1,0 +1,45 @@
+name: Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm install
+      - run: npx cap add android
+      - run: npx cap sync android
+      # Fester Signierschlüssel, damit Updates über die alte Version installiert werden können (Daten bleiben erhalten)
+      - name: Signierschlüssel einrichten
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+        run: |
+          mkdir -p ~/.android
+          if [ -n "$KEYSTORE_B64" ]; then echo "$KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore; fi
+      - run: ./gradlew assembleDebug
+        working-directory: android
+      - run: mv android/app/build/outputs/apk/debug/app-debug.apk Stempeluhr.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Stempeluhr-APK
+          path: Stempeluhr.apk
+      - name: Release mit APK aktualisieren
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest Stempeluhr.apk --title "Stempeluhr (aktuell)" --notes "Build ${{ github.sha }}"
