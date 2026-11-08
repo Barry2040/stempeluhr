@@ -21,6 +21,8 @@ jobs:
           distribution: temurin
           java-version: 21
       - run: npm install
+      - name: Build-Nummer setzen
+        run: echo "window.APP_BUILD = ${{ github.run_number }};" > www/version.js
       - run: npx cap add android
       - run: npx cap sync android
       # Fester Signierschlüssel, damit Updates über die alte Version installiert werden können (Daten bleiben erhalten)
@@ -30,6 +32,10 @@ jobs:
         run: |
           mkdir -p ~/.android
           if [ -n "$KEYSTORE_B64" ]; then echo "$KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore; fi
+      - name: Versionsnummer in die APK schreiben
+        run: |
+          sed -i -E 's/versionCode [0-9]+/versionCode ${{ github.run_number }}/; s/versionName "[^"]*"/versionName "1.${{ github.run_number }}"/' android/app/build.gradle
+          grep -E 'versionCode|versionName' android/app/build.gradle
       - run: ./gradlew assembleDebug
         working-directory: android
       - run: mv android/app/build/outputs/apk/debug/app-debug.apk Stempeluhr.apk
@@ -37,9 +43,11 @@ jobs:
         with:
           name: Stempeluhr-APK
           path: Stempeluhr.apk
-      - name: Release mit APK aktualisieren
+      - name: Release veröffentlichen (die App prüft darauf auf Updates)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete latest --yes --cleanup-tag || true
-          gh release create latest Stempeluhr.apk --title "Stempeluhr (aktuell)" --notes "Build ${{ github.sha }}"
+          N=${{ github.run_number }}
+          gh release create "build-$N" Stempeluhr.apk --latest --title "Stempeluhr Build $N" --notes "$(git log -1 --pretty=%s)"
+          # alte Releases aufräumen, nur die letzten 3 behalten
+          gh release list --limit 100 --json tagName -q '.[].tagName' | grep -v "^build-$N$" | tail -n +3 | while read t; do gh release delete "$t" --yes --cleanup-tag; done

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-label="Stempeluhr – Arbeitszeiten erfassen, ohne Abo">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1114"/>
+      <stop offset="1" stop-color="#0f2a2a"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="300" rx="24" fill="url(#bg)"/>
+  <!-- Uhr -->
+  <g transform="translate(215 150)">
+    <circle r="105" fill="#0f766e"/>
+    <circle r="78" fill="none" stroke="#ffffff" stroke-width="14"/>
+    <path d="M0 -48 V4 L34 26" fill="none" stroke="#ffffff" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <!-- Bon -->
+  <g transform="translate(300 70) rotate(8)">
+    <path d="M0 0 H92 V128 l-11.5 -8 -11.5 8 -11.5 -8 -11.5 8 -11.5 -8 -11.5 8 -11.5 -8 -11.5 8 Z" fill="#f8fafc"/>
+    <g fill="#334155">
+      <rect x="14" y="16" width="64" height="8" rx="2"/>
+      <rect x="14" y="38" width="52" height="6" rx="2"/><rect x="14" y="52" width="58" height="6" rx="2"/>
+      <rect x="14" y="70" width="52" height="6" rx="2"/><rect x="14" y="84" width="58" height="6" rx="2"/>
+    </g>
+  </g>
+  <text x="440" y="140" font-family="Segoe UI, Arial, sans-serif" font-size="72" font-weight="700" fill="#ffffff">Stempeluhr</text>
+  <text x="442" y="192" font-family="Segoe UI, Arial, sans-serif" font-size="28" fill="#9ca3af">Arbeitszeiten und Pausen erfassen – kostenlos, ohne Abo</text>
+  <g font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="600">
+    <rect x="442" y="220" width="116" height="36" rx="18" fill="#134e4a"/><text x="500" y="244" text-anchor="middle" fill="#99f6e4">Android</text>
+    <rect x="570" y="220" width="160" height="36" rx="18" fill="#134e4a"/><text x="650" y="244" text-anchor="middle" fill="#99f6e4">Zettel-Scan</text>
+    <rect x="742" y="220" width="120" height="36" rx="18" fill="#134e4a"/><text x="802" y="244" text-anchor="middle" fill="#99f6e4">Offline</text>
+    <rect x="874" y="220" width="150" height="36" rx="18" fill="#134e4a"/><text x="949" y="244" text-anchor="middle" fill="#99f6e4">CSV-Export</text>
+  </g>
+</svg>

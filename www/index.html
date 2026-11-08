@@ -17,6 +17,7 @@
     --accent: #14b8a6; --accent-2: #2dd4bf; }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; background: var(--bg); color: var(--text);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
 body { padding: env(safe-area-inset-top) 0 calc(72px + env(safe-area-inset-bottom)); }
@@ -92,6 +93,10 @@ dialog h2 { margin: 0 0 4px; font-size: 18px; }
 <main>
   <!-- HEUTE -->
   <section class="view active" id="v-heute">
+    <div class="card row" id="updateCard" hidden style="border-color:var(--accent)">
+      <div><b>Update verfügbar</b><div class="muted" id="updateInfo"></div></div>
+      <button class="primary" onclick="installUpdate()">Jetzt laden</button>
+    </div>
     <div class="card status">
       <div class="label"><span class="dot" id="dot"></span><span id="stateLabel">Nicht eingestempelt</span></div>
       <div class="big" id="bigTime">0:00</div>
@@ -160,6 +165,12 @@ dialog h2 { margin: 0 0 4px; font-size: 18px; }
       </div>
       <input type="file" id="importFile" accept="application/json,.json" hidden>
     </div>
+    <div class="card">
+      <b>App</b>
+      <p class="muted" id="appVersion"></p>
+      <label class="check"><input type="checkbox" id="setAutoUpdate"> Beim Start automatisch nach Updates suchen</label>
+      <div class="btns"><button class="full" onclick="checkUpdate(true)">Nach Updates suchen</button></div>
+    </div>
   </section>
 </main>
 
@@ -209,11 +220,12 @@ dialog h2 { margin: 0 0 4px; font-size: 18px; }
 
 <div class="toast" id="toast"></div>
 
+<script src="version.js"></script>
 <script src="scan.js"></script>
 <script>
 // ---------- Speicher ----------
 const KEY = 'stempeluhr.v1';
-const DEFAULTS = { entries: [], settings: { target: 8, days: [1,2,3,4,5], autoBreak: false, startBalance: 0 } };
+const DEFAULTS = { entries: [], settings: { target: 8, days: [1,2,3,4,5], autoBreak: false, startBalance: 0, autoUpdate: true } };
 let db = load();
 function load() {
   try {
@@ -414,6 +426,8 @@ function renderSettings() {
   document.getElementById('setTarget').value = db.settings.target;
   document.getElementById('setAutoBreak').checked = db.settings.autoBreak;
   document.getElementById('setStartBalance').value = db.settings.startBalance || 0;
+  document.getElementById('setAutoUpdate').checked = db.settings.autoUpdate;
+  document.getElementById('appVersion').textContent = window.APP_BUILD ? `Version 1.${APP_BUILD} (Build ${APP_BUILD})` : 'Entwicklerversion';
   document.getElementById('setDays').innerHTML = [1,2,3,4,5,6,0].map(d =>
     `<label><input type="checkbox" value="${d}" ${db.settings.days.includes(d) ? 'checked' : ''}>${WD[d]}</label>`).join('');
 }
@@ -423,6 +437,7 @@ document.getElementById('v-settings').addEventListener('change', ev => {
   db.settings.autoBreak = document.getElementById('setAutoBreak').checked;
   db.settings.startBalance = parseFloat(document.getElementById('setStartBalance').value) || 0;
   db.settings.days = [...document.querySelectorAll('#setDays input:checked')].map(i => +i.value);
+  db.settings.autoUpdate = document.getElementById('setAutoUpdate').checked;
   save(); toast('Einstellungen gespeichert');
 });
 
@@ -550,6 +565,32 @@ for (const id of ['scanCam', 'scanGal']) document.getElementById(id).addEventLis
   const f = ev.target.files[0]; ev.target.value = '';
   if (f) scanFile(f).catch(e => toast('Scan fehlgeschlagen: ' + (e.message || e)));
 });
+
+// ---------- Updates (neueste APK aus GitHub-Releases) ----------
+const REPO = 'Barry2040/stempeluhr';
+let updateUrl = null;
+async function checkUpdate(manual) {
+  try {
+    const r = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { Accept: 'application/vnd.github+json' } });
+    if (!r.ok) throw new Error(r.status === 404 ? 'Keine Releases gefunden (ist das Repo öffentlich?)' : 'GitHub antwortet nicht (' + r.status + ')');
+    const rel = await r.json();
+    const latest = parseInt(String(rel.tag_name).replace(/\D/g, ''), 10) || 0;
+    const apk = (rel.assets || []).find(a => a.name.endsWith('.apk'));
+    if (apk && latest > (window.APP_BUILD || 0)) {
+      updateUrl = apk.browser_download_url;
+      document.getElementById('updateInfo').textContent = `Build ${latest}: ${rel.body || rel.name || ''}`.slice(0, 120);
+      document.getElementById('updateCard').hidden = false;
+      if (manual) { document.querySelector('nav button[data-v=heute]').click(); }
+    } else if (manual) toast('Du hast die neueste Version');
+  } catch (e) { if (manual) toast('Update-Prüfung fehlgeschlagen: ' + e.message); }
+}
+function installUpdate() {
+  if (!updateUrl) return;
+  toast('Download startet – danach die Datei öffnen und „Installieren“ tippen');
+  // Externe Links öffnet die App im System-Browser, der die APK herunterlädt
+  setTimeout(() => { location.href = updateUrl; }, 600);
+}
+if (db.settings.autoUpdate && window.APP_BUILD) checkUpdate(false);
 
 // ---------- Navigation ----------
 document.querySelectorAll('nav button').forEach(btn => btn.onclick = () => {
