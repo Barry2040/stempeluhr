@@ -46,7 +46,7 @@
 | 💶 **Stundenlohn & Verdienst** | Stundenlohn eintragen und den geschätzten Bruttoverdienst in Woche, Monat, Jahr, Auszug und CSV sehen – optional mit bezahltem Urlaub/Krank/Feiertag, Sonntags- und Feiertagszuschlag und Verdienstgrenze pro Monat (z. B. Minijob) |
 | 🔔 **Erinnerungen** | Tägliche Benachrichtigung zur gewünschten Uhrzeit, falls du noch nichts eingetragen hast (nur an Arbeitstagen); optional „Noch eingestempelt?“ nach X Stunden und „Pause vorbei“ nach X Minuten |
 | ☕ **Mindestpause** | Optional: gesetzliche Pause (30 Min. ab 6 Std., 45 Min. ab 9 Std.) automatisch abziehen |
-| 💾 **Backup** | Alle Daten als JSON sichern und wiederherstellen |
+| 💾 **Backup** | **Automatisch** täglich oder wöchentlich in **Dokumente/Stempeluhr** (bleibt auch nach dem Deinstallieren), alte Kopien werden aufgeräumt; Wiederherstellen mit einem Tipp; zusätzlich manuell als JSON teilen und laden |
 | 🔄 **Updates** | Die App meldet sich, wenn es eine neue Version gibt – ein Tipp lädt sie herunter; „Später“ fragt erst beim nächsten Build wieder |
 | 🌙 **Hell & Dunkel** | Folgt automatisch dem Design deines Handys |
 
@@ -85,21 +85,22 @@ Status (**neu**, **schon vorhanden**, **ersetzt vorhandene …**) und wählst pe
 |---|---|
 | Stempeln, Pausen, Nachtragen, alle Ansichten und Werkzeuge, Saldo, Wochenkonto, Urlaub, Feiertage | ✅ getestet (Browser) |
 | Verdienst-Berechnung (Lohn, bezahlte Abwesenheit, Zuschläge, Grenze) | ✅ getestet (Browser) |
+| Automatisches Backup: Anlegen, Aufräumen, Wiederherstellen | ✅ getestet (Browser, Dateisystem simuliert) |
 | Planung der Erinnerungen | ✅ getestet (Browser, Benachrichtigungen simuliert) |
 | Erkennung des Zettel-Formats inkl. typischer OCR-Fehler (O/0, l/1, ;/:) | ✅ getestet (mit Text eines echten Zettels) |
 | Zettel-Scan mit Kamera auf dem Handy | ungetestet |
-| CSV-Export, Bericht, Backup, Fotos, Update-Download, Benachrichtigungen und Zurück-Taste in der App | ungetestet |
+| CSV-Export, Bericht, Backup, Fotos, Update-Download, Benachrichtigungen, Zurück-Taste und Backup-Ordner in der App | ungetestet |
 
 ## 🔒 Datenschutz
 
 Die App hat **kein Konto und keinen Server**. Einträge und Einstellungen liegen nur auf deinem Handy. Beim Deinstallieren
-sind sie weg – darum gibt es das Backup unter **Einstellungen → Daten** (Fotos sind nicht im Backup).
+sind sie weg – darum legt die App automatisch Backups im Ordner **Dokumente/Stempeluhr** an (Einstellungen → Backup). Kopiere den Ordner ab und zu auf PC oder Cloud, falls das Handy verloren geht. Fotos sind nicht im Backup.
 
 - **Texterkennung:** Fotos werden mit **Google ML Kit direkt auf dem Gerät** gelesen und nicht hochgeladen. ML Kit sendet laut Google
   allerdings anonyme Nutzungs- und Leistungsdaten an Google.
 - **Update-Prüfung:** Beim Start fragt die App bei der GitHub-API nach der neuesten Version; dabei sieht GitHub deine IP-Adresse.
   Lässt sich in den Einstellungen abschalten.
-- **Berechtigungen:** Benachrichtigungen (nur wenn du Erinnerungen einschaltest) und Wecker/Erinnerungen für pünktliche Benachrichtigungen. Kamera läuft über die normale Foto-Auswahl.
+- **Berechtigungen:** Benachrichtigungen (nur wenn du Erinnerungen einschaltest) und Wecker/Erinnerungen für pünktliche Benachrichtigungen; auf Android 10 und älter Speicherzugriff für das Backup. Kamera läuft über die normale Foto-Auswahl.
 
 ## 👩‍💻 Für Entwickler
 

@@ -2,9 +2,10 @@
 // ================= Speicher =================
 const KEY = 'stempeluhr.v1';
 const DEFAULT_REMINDERS = { daily: false, time: '18:00', onlyWorkdays: true, skipIfEntered: true, clockOut: false, clockOutHours: 9, pause: false, pauseMin: 30 };
+const DEFAULT_BACKUP = { mode: 'daily', keep: 14 };
 const DEFAULT_PAY = { wage: 0, paidAbsence: true, sunPct: 0, holPct: 0, limit: 0 };
 const DEFAULT_SETTINGS = { target: 8, days: [1,2,3,4,5], autoBreak: false, startBalance: 0, autoUpdate: true, land: '', vacation: 30, savePhotos: true, checkLaw: true,
-  sollMode: 'day', weekHours: 40, balanceMode: 'total', skipBuild: 0, reminders: DEFAULT_REMINDERS, pay: DEFAULT_PAY };
+  sollMode: 'day', weekHours: 40, balanceMode: 'total', skipBuild: 0, reminders: DEFAULT_REMINDERS, pay: DEFAULT_PAY, backup: DEFAULT_BACKUP };
 let db = load();
 function load() {
   let d = null;
@@ -17,6 +18,7 @@ function load() {
   };
   out.settings.reminders = { ...DEFAULT_REMINDERS, ...(d.settings?.reminders || {}) };
   out.settings.pay = { ...DEFAULT_PAY, ...(d.settings?.pay || {}) };
+  out.settings.backup = { ...DEFAULT_BACKUP, ...(d.settings?.backup || {}) };
   out.entries.forEach(e => { e.tags ||= []; e.breaks ||= []; });
   const cutoff = Date.now() - 30 * 864e5; // Papierkorb nach 30 Tagen leeren
   out.trash = out.trash.filter(t => t.at > cutoff);
@@ -973,9 +975,16 @@ RENDER.settings = () => {
     <div class="card"><h3>Zettel-Scan & Fotos</h3>
       <label class="check"><input type="checkbox" id="setSavePhotos" ${s.savePhotos ? 'checked' : ''}> Fotos gescannter Zettel unter „Fotos“ aufbewahren</label>
       <label class="check" style="margin-top:12px"><input type="checkbox" id="setCheckLaw" ${s.checkLaw ? 'checked' : ''}> Unter „Prüfen“ auch Arbeitszeitgesetz-Regeln anzeigen (Pausen, max. 10 Std., 11 Std. Ruhezeit)</label></div>
-    <div class="card"><h3>Daten</h3>
-      <p class="muted">Alle Daten bleiben nur auf deinem Handy. Mach ab und zu ein Backup – beim Deinstallieren der App sind sie sonst weg. (Fotos sind nicht im Backup enthalten.)</p>
-      <div class="btns"><button onclick="exportBackup()">Backup speichern</button><button onclick="$('importFile').click()">Backup laden</button>
+    <div class="card" id="bakCard"><h3>💾 Backup</h3>
+      <p class="muted" style="margin-top:0">Alle Daten bleiben nur auf deinem Handy. Das automatische Backup legt Kopien im Ordner <b>Dokumente/Stempeluhr</b> ab – die bleiben auch erhalten, wenn du die App deinstallierst oder das Handy zurücksetzt (dann Ordner vorher auf PC/Cloud kopieren). Fotos sind nicht im Backup.</p>
+      <label>Automatisches Backup</label>
+      <select id="bakMode">${[['off', 'aus'], ['daily', 'täglich'], ['weekly', 'wöchentlich']].map(([v, n]) => `<option value="${v}" ${s.backup.mode === v ? 'selected' : ''}>${n}</option>`).join('')}</select>
+      <div ${s.backup.mode === 'off' ? 'hidden' : ''}><label>Wie viele Backups behalten</label><input type="number" id="bakKeep" min="1" max="100" step="1" value="${s.backup.keep}" style="width:90px"></div>
+      <p class="muted" id="bakInfo" style="margin-bottom:0">${backupInfo()}</p>
+      <div class="btns" style="margin-top:12px"><button onclick="autoBackup(true)">Jetzt sichern</button><button onclick="listAutoBackups()">Wiederherstellen</button></div>
+      <div id="bakList"></div>
+      <label style="margin-top:16px">Manuell</label>
+      <div class="btns"><button onclick="exportBackup()">Backup teilen / speichern</button><button onclick="$('importFile').click()">Backup-Datei laden</button>
         <button onclick="go('tags')">Tags verwalten</button><button onclick="go('papierkorb')">Papierkorb</button>
         <button class="danger full" onclick="wipeAll()">Alle Daten löschen</button></div></div>
     <div class="card"><h3>App</h3><p class="muted">${window.APP_BUILD ? `Version 1.${APP_BUILD} (Build ${APP_BUILD})` : 'Entwicklerversion'}</p>
@@ -993,6 +1002,9 @@ $('v-settings').addEventListener('change', async ev => {
   s.savePhotos = $('setSavePhotos').checked;
   s.checkLaw = $('setCheckLaw').checked;
   s.autoUpdate = $('setAutoUpdate').checked;
+  const hadBak = s.backup.mode;
+  s.backup.mode = $('bakMode').value; s.backup.keep = Math.max(1, Math.min(100, Math.round(num('bakKeep', 14)) || 14));
+  if (hadBak === 'off' && s.backup.mode !== 'off') setTimeout(() => autoBackup(true), 300);
   const hadWage = !!s.pay.wage;
   Object.assign(s.pay, { wage: Math.max(0, parseFloat(($('payWage').value || '').replace(',', '.')) || 0), paidAbsence: $('payAbs').checked,
     sunPct: num('paySun', 0), holPct: num('payHol', 0), limit: num('payLimit', 0) });
@@ -1003,7 +1015,7 @@ $('v-settings').addEventListener('change', async ev => {
   if (wantNotif && !(await ensureNotifPermission())) toast('Benachrichtigungen sind nicht erlaubt – bitte in den Android-Einstellungen der App freigeben');
   else toast('Gespeichert');
   // Felder, die andere Felder ein-/ausblenden, neu zeichnen
-  const rerender = ['remDaily', 'remOut', 'remPause', 'setWeekHours', 'setTarget'].includes(ev.target.id) || ev.target.dataset.day != null || hadWage !== !!s.pay.wage;
+  const rerender = ['remDaily', 'remOut', 'remPause', 'setWeekHours', 'setTarget'].includes(ev.target.id) || ev.target.dataset.day != null || hadWage !== !!s.pay.wage || hadBak !== s.backup.mode;
   save(rerender);
 });
 
@@ -1155,6 +1167,78 @@ function wipeAll() {
   localStorage.removeItem(KEY); db = load(); save(); toast('Alles gelöscht');
 }
 
+// ================= Automatisches Backup (Dokumente/Stempeluhr) =================
+const BAK_DIR = 'Stempeluhr', BAK_META = 'stempeluhr.backup';
+const FS = () => native() ? window.Capacitor.Plugins.Filesystem : null;
+function bakMeta() { try { return JSON.parse(localStorage.getItem(BAK_META)) || {}; } catch (e) { return {}; } }
+function hashStr(str) { let h = 5381; for (let i = 0; i < str.length; i++) h = (h * 33 ^ str.charCodeAt(i)) >>> 0; return h.toString(36) + str.length; }
+function backupInfo() {
+  const m = bakMeta();
+  if (!native()) return 'Automatisches Backup läuft nur in der installierten App.';
+  if (m.error) return '⚠️ Letztes Backup fehlgeschlagen: ' + esc(m.error);
+  return m.last ? `Letztes Backup: ${new Date(m.last).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })} · ${esc(m.file || '')}` : 'Noch kein automatisches Backup.';
+}
+async function bakPermission(ask) {
+  const fs = FS(); if (!fs) return false;
+  try { let p = await fs.checkPermissions(); if (p.publicStorage !== 'granted' && ask) p = await fs.requestPermissions(); return p.publicStorage === 'granted'; }
+  catch (e) { return true; } // ab Android 11 nicht nötig
+}
+let _bakRunning = false;
+async function autoBackup(manual = false) {
+  const fs = FS(), b = db.settings.backup;
+  if (!fs) { if (manual) toast('Geht nur in der installierten App – nutze „Backup teilen / speichern“'); return; }
+  if (_bakRunning || (!manual && b.mode === 'off')) return;
+  const json = JSON.stringify(db), hash = hashStr(json), m = bakMeta(), now = Date.now();
+  if (!manual) {
+    if (m.hash === hash) return; // nichts geändert
+    if (m.last && (b.mode === 'weekly' ? now - m.last < 7 * DAY : dateKey(m.last) === todayKey())) return;
+  }
+  _bakRunning = true;
+  try {
+    if (!(await bakPermission(manual))) throw new Error('Speicher-Zugriff nicht erlaubt');
+    const d = new Date(now), file = `Stempeluhr_Auto_${todayKey()}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.json`;
+    await fs.writeFile({ path: `${BAK_DIR}/${file}`, data: json, directory: 'DOCUMENTS', encoding: 'utf8', recursive: true });
+    localStorage.setItem(BAK_META, JSON.stringify({ last: now, hash, file }));
+    await pruneBackups().catch(() => {});
+    if (manual) toast('Backup gespeichert in Dokumente/Stempeluhr');
+  } catch (e) {
+    localStorage.setItem(BAK_META, JSON.stringify({ ...m, error: e.message || String(e) }));
+    if (manual) toast('Backup fehlgeschlagen: ' + (e.message || e));
+  } finally {
+    _bakRunning = false;
+    if ($('bakInfo')) $('bakInfo').innerHTML = backupInfo();
+  }
+}
+async function autoBackupFiles() {
+  const r = await FS().readdir({ path: BAK_DIR, directory: 'DOCUMENTS' });
+  return r.files.map(f => typeof f === 'string' ? f : f.name).filter(n => /^Stempeluhr_Auto_.*\.json$/.test(n)).sort().reverse();
+}
+async function pruneBackups() {
+  const files = await autoBackupFiles();
+  for (const f of files.slice(db.settings.backup.keep)) await FS().deleteFile({ path: `${BAK_DIR}/${f}`, directory: 'DOCUMENTS' });
+}
+async function listAutoBackups() {
+  const el = $('bakList');
+  if (!FS()) { toast('Geht nur in der installierten App – nutze „Backup-Datei laden“'); return; }
+  let files = [];
+  try { files = await autoBackupFiles(); } catch (e) {}
+  el.innerHTML = `<div style="margin-top:12px">${files.map(f => {
+    const m = f.match(/(\d{4}-\d\d-\d\d)_(\d\d)(\d\d)/);
+    return `<div class="row"><span>${m ? `${shortDate(m[1])} ${m[1].slice(0, 4)}, ${m[2]}:${m[3]}` : esc(f)}</span><button class="small" onclick="restoreAutoBackup('${esc(f)}')">Laden</button></div>`;
+  }).join('') || '<p class="muted">Keine automatischen Backups gefunden.</p>'}
+    <p class="muted">Nach einer Neuinstallation sieht die App ältere Backups nicht mehr – dann „Backup-Datei laden“ tippen und die Datei unter Dokumente/Stempeluhr auswählen.</p></div>`;
+}
+async function restoreAutoBackup(file) {
+  try {
+    const r = await FS().readFile({ path: `${BAK_DIR}/${file}`, directory: 'DOCUMENTS', encoding: 'utf8' });
+    const d = JSON.parse(r.data);
+    if (!Array.isArray(d.entries)) throw new Error('Keine gültige Backup-Datei');
+    if (!confirm(`Backup vom ${file.slice(16, 26)} mit ${d.entries.length} Einträgen laden? Aktuelle Daten werden ersetzt (vorher wird noch ein Backup gemacht).`)) return;
+    await autoBackup(true);
+    localStorage.setItem(KEY, JSON.stringify(d)); db = load(); save(); toast('Backup geladen');
+  } catch (e) { toast('Fehler: ' + (e.message || e)); }
+}
+
 // ================= Updates =================
 const REPO = 'Barry2040/stempeluhr';
 async function checkUpdate(manual) {
@@ -1228,6 +1312,7 @@ if (native() && window.Capacitor.Plugins.App) {
     if (ROOT.includes(ui.view)) go('tag'); else history.back();
   });
   CapApp.addListener('resume', () => { _idx = null; if (!document.querySelector('dialog[open]')) render(); scheduleReminders(); });
+  CapApp.addListener('pause', () => autoBackup(false));
 }
 
 // ================= Start =================
@@ -1237,3 +1322,4 @@ scheduleReminders();
 setInterval(() => { if (ui.view === 'tag' && !document.querySelector('dialog[open]')) render(); }, 15000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && !document.querySelector('dialog[open]')) { if (ui.view === 'tag' && ui.date < todayKey() && active()) ui.date = todayKey(); render(); } });
 if (db.settings.autoUpdate && window.APP_BUILD) setTimeout(() => checkUpdate(false), 3000);
+setTimeout(() => autoBackup(false), 6000);

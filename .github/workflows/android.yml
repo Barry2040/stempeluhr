@@ -28,6 +28,12 @@ jobs:
         run: |
           npx capacitor-assets generate --android --iconBackgroundColor '#0f766e' --iconBackgroundColorDark '#0f766e'
           cp -r android-res/* android/app/src/main/res/
+      # Auto-Backup in Dokumente/Stempeluhr: auf Android 10 und älter braucht das Speicher-Rechte
+      - name: Speicher-Berechtigung für Backups (Android ≤ 10)
+        run: |
+          M=android/app/src/main/AndroidManifest.xml
+          sed -i 's#<application#<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="29" />\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />\n\n    <application android:requestLegacyExternalStorage="true"#' $M
+          grep -n 'EXTERNAL_STORAGE\|requestLegacy' $M
       - run: npx cap sync android
       # Fester Signierschlüssel, damit Updates über die alte Version installiert werden können (Daten bleiben erhalten)
       - name: Signierschlüssel einrichten
