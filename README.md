@@ -43,6 +43,7 @@
 | 📤 **Auszug** | Beliebiger Zeitraum als Bericht (HTML, druckbar als PDF) oder CSV für Excel, Tag als Text teilen |
 | 🗑️ **Papierkorb** | Gelöschte Einträge und besondere Tage 30 Tage lang wiederherstellbar |
 | ⚖️ **Soll / Ist / Saldo** | Soll pro Tag oder pro Woche (z. B. 35, 40, 45 Std.), Arbeitstage wählen; Stundenkonto fortlaufend (mit Startsaldo) oder **jede Woche neu ab 0** – so siehst du sofort, ob dein Wochensoll erreicht ist |
+| 💶 **Stundenlohn & Verdienst** | Stundenlohn eintragen und den geschätzten Bruttoverdienst in Woche, Monat, Jahr, Auszug und CSV sehen – optional mit bezahltem Urlaub/Krank/Feiertag, Sonntags- und Feiertagszuschlag und Verdienstgrenze pro Monat (z. B. Minijob) |
 | 🔔 **Erinnerungen** | Tägliche Benachrichtigung zur gewünschten Uhrzeit, falls du noch nichts eingetragen hast (nur an Arbeitstagen); optional „Noch eingestempelt?“ nach X Stunden und „Pause vorbei“ nach X Minuten |
 | ☕ **Mindestpause** | Optional: gesetzliche Pause (30 Min. ab 6 Std., 45 Min. ab 9 Std.) automatisch abziehen |
 | 💾 **Backup** | Alle Daten als JSON sichern und wiederherstellen |
@@ -83,6 +84,7 @@ Status (**neu**, **schon vorhanden**, **ersetzt vorhandene …**) und wählst pe
 | Bereich | Status |
 |---|---|
 | Stempeln, Pausen, Nachtragen, alle Ansichten und Werkzeuge, Saldo, Wochenkonto, Urlaub, Feiertage | ✅ getestet (Browser) |
+| Verdienst-Berechnung (Lohn, bezahlte Abwesenheit, Zuschläge, Grenze) | ✅ getestet (Browser) |
 | Planung der Erinnerungen | ✅ getestet (Browser, Benachrichtigungen simuliert) |
 | Erkennung des Zettel-Formats inkl. typischer OCR-Fehler (O/0, l/1, ;/:) | ✅ getestet (mit Text eines echten Zettels) |
 | Zettel-Scan mit Kamera auf dem Handy | ungetestet |

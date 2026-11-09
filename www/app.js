@@ -2,8 +2,9 @@
 // ================= Speicher =================
 const KEY = 'stempeluhr.v1';
 const DEFAULT_REMINDERS = { daily: false, time: '18:00', onlyWorkdays: true, skipIfEntered: true, clockOut: false, clockOutHours: 9, pause: false, pauseMin: 30 };
+const DEFAULT_PAY = { wage: 0, paidAbsence: true, sunPct: 0, holPct: 0, limit: 0 };
 const DEFAULT_SETTINGS = { target: 8, days: [1,2,3,4,5], autoBreak: false, startBalance: 0, autoUpdate: true, land: '', vacation: 30, savePhotos: true, checkLaw: true,
-  sollMode: 'day', weekHours: 40, balanceMode: 'total', skipBuild: 0, reminders: DEFAULT_REMINDERS };
+  sollMode: 'day', weekHours: 40, balanceMode: 'total', skipBuild: 0, reminders: DEFAULT_REMINDERS, pay: DEFAULT_PAY };
 let db = load();
 function load() {
   let d = null;
@@ -15,6 +16,7 @@ function load() {
     settings: { ...DEFAULT_SETTINGS, ...(d.settings || {}) },
   };
   out.settings.reminders = { ...DEFAULT_REMINDERS, ...(d.settings?.reminders || {}) };
+  out.settings.pay = { ...DEFAULT_PAY, ...(d.settings?.pay || {}) };
   out.entries.forEach(e => { e.tags ||= []; e.breaks ||= []; });
   const cutoff = Date.now() - 30 * 864e5; // Papierkorb nach 30 Tagen leeren
   out.trash = out.trash.filter(t => t.at > cutoff);
@@ -137,6 +139,43 @@ function weekStats(k, now = Date.now()) {
 }
 // Stundenkonto: fortlaufend oder jede Woche neu (dann = Ist − Soll der laufenden Woche)
 const kontoOf = (k, now = Date.now()) => db.settings.balanceMode === 'week' ? weekStats(k, now).diff : balanceUntil(todayKey(), now);
+// ================= Verdienst (brutto, geschätzt) =================
+const eur = n => n.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
+// Bezahlte Abwesenheit: Soll, das an Feiertagen / Urlaub / Krank usw. wegfällt, wird wie gearbeitet bezahlt
+function paidCreditOf(k) {
+  const base = db.settings.days.includes(parseKey(k).getDay()) ? dailyTarget() : 0;
+  if (!base) return 0;
+  if (holidayOf(k)) return base;
+  const sp = specialOf(k);
+  return sp && SPECIAL[sp.type]?.credit ? (sp.half ? base / 2 : base) : 0;
+}
+function earnOf(k, now = Date.now()) {
+  const p = db.settings.pay, w = p.wage || 0, out = { work: 0, absence: 0, extra: 0, total: 0 };
+  if (!w || k > todayKey()) return out;
+  out.work = netOf(k, now) / H * w;
+  if (p.paidAbsence && idx().first && k >= idx().first) out.absence = paidCreditOf(k) / H * w; // erst ab dem ersten Eintrag, wie beim Saldo
+  const pct = Math.max(holidayOf(k) ? p.holPct || 0 : 0, parseKey(k).getDay() === 0 ? p.sunPct || 0 : 0);
+  out.extra = out.work * pct / 100;
+  out.total = out.work + out.absence + out.extra;
+  return out;
+}
+function rangeEarn(fromK, toK, now = Date.now()) {
+  const r = { work: 0, absence: 0, extra: 0, total: 0 };
+  for (const k of days(fromK, toK)) { const e = earnOf(k, now); for (const x in r) r[x] += e[x]; }
+  return r;
+}
+// Karte für Woche / Monat / Jahr / Auszug; limit = Verdienstgrenze für den Zeitraum (z.B. Minijob)
+function earnCard(fromK, toK, limit = 0, now = Date.now()) {
+  if (!db.settings.pay.wage) return '';
+  const r = rangeEarn(fromK, toK, now), part = toK > todayKey() && fromK <= todayKey();
+  return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline"><h3 style="margin:0">💶 Verdienst</h3><b style="font-size:20px">${eur(r.total)}</b></div>
+    <p class="muted" style="margin:2px 0 8px">brutto, geschätzt${part ? ' · bis heute' : ''} · ${eur(db.settings.pay.wage)}/Std.</p>
+    <div class="row"><span>Arbeitszeit</span><b>${eur(r.work)}</b></div>
+    ${r.absence ? `<div class="row"><span>Urlaub, Krank, Feiertage</span><b>${eur(r.absence)}</b></div>` : ''}
+    ${r.extra ? `<div class="row"><span>Zuschläge Sonntag / Feiertag</span><b>${eur(r.extra)}</b></div>` : ''}
+    ${limit ? `<div class="row" style="display:block"><div style="display:flex;justify-content:space-between"><span>Grenze ${eur(limit)}</span><b class="${r.total > limit ? 'neg' : 'pos'}">${r.total > limit ? 'über um ' + eur(r.total - limit) : 'noch ' + eur(limit - r.total)}</b></div>
+      <div class="bar"><i class="${r.total > limit ? 'over' : ''}" style="width:${Math.min(100, r.total / limit * 100)}%"></i></div></div>` : ''}</div>`;
+}
 const active = () => db.entries.find(e => e.end == null);
 const openBreak = e => e?.breaks.find(b => b.end == null);
 
@@ -211,6 +250,7 @@ const TI = {
   urlaub: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V11M5 9a7 7 0 0114 0z"/><path d="M4 21h16"/></svg>',
   feiertage: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg>',
   glocke: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0112 0v5l2 2H4z"/><path d="M10 20a2 2 0 004 0"/></svg>',
+  lohn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6.5 9.5v.01M17.5 14.5v.01"/></svg>',
   hilfe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 114 2c-1 .7-1.5 1.2-1.5 2.5M12 17v.01"/></svg>',
 };
 const tile = (v, label, onclick, badge) => `<button class="tile" onclick="${onclick || `go('${v}')`}"><span class="ti">${TI[v]}</span>${label}${badge ? `<span class="badge">${badge}</span>` : ''}</button>`;
@@ -224,7 +264,7 @@ RENDER.menu = () => {
     <div class="sec">WERKZEUGE</div>
     <div class="tiles">${tile('urlaub', 'Urlaub')}${tile('feiertage', 'Feiertage')}${tile('besondere', 'Besondere')}${tile('suchen', 'Suchen')}
       ${tile('tags', 'Tags')}${tile('diagramm', 'Diagramm')}${tile('inkonsistent', 'Prüfen', null, n ? (n > 99 ? '99+' : n) : '')}${tile('fotos', 'Fotos')}
-      ${tile('auszug', 'Auszug')}${tile('papierkorb', 'Papierkorb', null, db.trash.length || '')}</div>
+      ${tile('lohn', 'Verdienst', db.settings.pay.wage ? "go('monat')" : "go('settings');setTimeout(()=>$('payCard')?.scrollIntoView({behavior:'smooth'}),80)")}${tile('auszug', 'Auszug')}${tile('papierkorb', 'Papierkorb', null, db.trash.length || '')}</div>
     <div class="sec">MEHR</div>
     <div class="tiles">${tile('scan', 'Zettel fotografieren', 'scanPick(true)')}${tile('fotos', 'Zettel aus Galerie', 'scanPick(false)')}
       ${tile('glocke', 'Erinnerungen', "go('settings');setTimeout(()=>$('remCard')?.scrollIntoView({behavior:'smooth'}),80)")}${tile('settings', 'Einstellungen')}
@@ -354,6 +394,7 @@ RENDER.woche = () => {
     ${(() => { const ws = weekStats(from, now); return ws.soll ? `<div class="card" style="padding:12px 16px">
       <div style="display:flex;justify-content:space-between"><b>Wochensoll ${dur(ws.soll)}</b><span class="${ws.diff >= 0 ? 'pos' : 'muted'}">${ws.diff >= 0 ? '✓ erreicht' + (ws.diff >= M ? ' · ' + dur(ws.diff, true) : '') : 'noch ' + dur(-ws.diff)}</span></div>
       <div class="bar"><i class="${ws.diff >= 0 ? 'over' : ''}" style="width:${Math.min(100, ws.ist / ws.soll * 100)}%"></i></div></div>` : ''; })()}
+    ${earnCard(from, to, 0, now)}
     <div class="card">${[...days(from, to)].map(k => dayRowHTML(k, now)).join('')}</div>`;
 };
 function isoWeek(d) { const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); const n = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() + 4 - n); const y = new Date(Date.UTC(t.getUTCFullYear(), 0, 1)); return Math.ceil(((t - y) / DAY + 1) / 7); }
@@ -384,7 +425,8 @@ RENDER.monat = () => {
       <p class="muted" style="margin:10px 0 0">🟩 Soll erreicht · 🟧 teilweise · 🟦 besonderer Tag / Feiertag</p></div>
     <div class="card"><div class="row"><span>Arbeitstage mit Einträgen</span><b>${st.workdays}</b></div>
       <div class="row"><span>Pausen gesamt</span><b>${dur(st.brk)}</b></div>
-      <div class="row"><span>Ø pro Arbeitstag</span><b>${st.workdays ? dur(st.ist / st.workdays) : '–'}</b></div></div>`;
+      <div class="row"><span>Ø pro Arbeitstag</span><b>${st.workdays ? dur(st.ist / st.workdays) : '–'}</b></div></div>
+    ${earnCard(from, to, db.settings.pay.limit, now)}`;
 };
 function shiftMonth(n) { const [y, m] = ui.month.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); ui.month = `${d.getFullYear()}-${pad(d.getMonth()+1)}`; render(); }
 
@@ -398,7 +440,7 @@ RENDER.jahr = () => {
     const from = `${y}-${pad(i+1)}-01`, to = dateKey(new Date(y, i + 1, 0)), s = rangeStats(from, to, now);
     const pct = s.soll ? Math.min(100, s.ist / s.soll * 100) : 0;
     return `<div class="row click" style="display:block" onclick="go('monat',{month:'${y}-${pad(i+1)}'})">
-      <div style="display:flex;justify-content:space-between"><b>${name}</b><span class="t">${dur(s.ist)} <span class="muted">/ ${dur(s.soll)}</span> · <span class="${cls(s.saldo)}">${dur(s.saldo, true)}</span></span></div>
+      <div style="display:flex;justify-content:space-between"><b>${name}</b><span class="t">${dur(s.ist)} <span class="muted">/ ${dur(s.soll)}</span> · <span class="${cls(s.saldo)}">${dur(s.saldo, true)}</span>${db.settings.pay.wage && from <= todayKey() ? ` · ${eur(rangeEarn(from, to, now).total)}` : ''}</span></div>
       <div class="bar"><i class="${s.ist >= s.soll && s.soll ? 'over' : ''}" style="width:${pct}%"></i></div></div>`;
   }).join('');
   const cnt = t => db.specials.filter(s => s.type === t && s.date.startsWith(y + '-')).reduce((a, s) => a + (s.half ? .5 : 1), 0);
@@ -410,6 +452,7 @@ RENDER.jahr = () => {
       <div><span>Urlaub genommen</span><b>${fmtDays(v.taken + v.planned)} / ${fmtDays(v.total)}</b></div>
       <div><span>Krank</span><b>${fmtDays(cnt('krank'))}</b></div>
       <div><span>Resturlaub</span><b class="${v.left < 0 ? 'neg' : ''}">${fmtDays(v.left)}</b></div></div>
+    ${earnCard(`${y}-01-01`, `${y}-12-31`, (db.settings.pay.limit || 0) * 12, now)}
     <div class="card">${rows}</div>`;
 };
 
@@ -821,6 +864,7 @@ RENDER.auszug = () => {
     <div class="card"><div class="row"><span>Arbeitstage</span><b>${st.workdays}</b></div><div class="row"><span>Pausen</span><b>${dur(st.brk)}</b></div>
       ${Object.entries(spec).map(([t, n]) => `<div class="row"><span>${SPECIAL[t].icon} ${SPECIAL[t].name}</span><b>${n} Tage</b></div>`).join('')}
       <div class="row"><span>Stundenkonto am ${shortDate(to < todayKey() ? to : todayKey())}</span><b class="${cls(balanceUntil(to, now))}">${dur(balanceUntil(to, now), true)}</b></div></div>
+    ${earnCard(from, to, 0, now)}
     <div class="btns"><button class="primary" onclick="exportReport()">📄 Bericht teilen</button><button onclick="exportCSV()">📊 CSV (Excel)</button></div>
     <p class="muted">Der Bericht ist eine HTML-Datei – im Browser öffnen und über „Drucken“ als PDF speichern.</p>`;
   $('rPreset').onchange = ev => { ui.rep.preset = ev.target.value; render(); };
@@ -842,10 +886,11 @@ function reportRows(from, to) {
 }
 function exportCSV() {
   const [from, to] = repRange(), num = ms => (ms / H).toFixed(2).replace('.', ',');
-  const out = [['Datum','Wochentag','Beginn','Ende','Pause (Std)','Arbeitszeit (Std)','Arbeitszeit','Soll (Std)','Saldo (Std)','Besonderes / Notiz','Tags']];
-  for (const r of reportRows(from, to)) out.push([parseKey(r.k).toLocaleDateString('de-DE'), WD[parseKey(r.k).getDay()], r.start, r.end, num(r.b), num(r.n), dur(r.n), num(r.s), num(r.n - r.s), r.note, r.tags]);
+  const pay = !!db.settings.pay.wage, money = n => n.toFixed(2).replace('.', ',');
+  const out = [['Datum','Wochentag','Beginn','Ende','Pause (Std)','Arbeitszeit (Std)','Arbeitszeit','Soll (Std)','Saldo (Std)','Besonderes / Notiz','Tags', ...(pay ? ['Verdienst (€)'] : [])]];
+  for (const r of reportRows(from, to)) out.push([parseKey(r.k).toLocaleDateString('de-DE'), WD[parseKey(r.k).getDay()], r.start, r.end, num(r.b), num(r.n), dur(r.n), num(r.s), num(r.n - r.s), r.note, r.tags, ...(pay ? [money(earnOf(r.k).total)] : [])]);
   const st = rangeStats(from, to);
-  out.push([], ['Summe Ist', '', '', '', num(st.brk), num(st.ist), dur(st.ist), num(st.soll), num(st.ist - st.soll)]);
+  out.push([], ['Summe Ist', '', '', '', num(st.brk), num(st.ist), dur(st.ist), num(st.soll), num(st.ist - st.soll), '', '', ...(pay ? [money(rangeEarn(from, to).total)] : [])]);
   const csv = '﻿' + out.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(';')).join('\r\n');
   saveFile(`Arbeitszeiten_${from}_bis_${to}.csv`, csv, 'text/csv').catch(e => toast('Export fehlgeschlagen: ' + e.message));
 }
@@ -857,7 +902,7 @@ function exportReport() {
 table{border-collapse:collapse;width:100%;font-size:13px}th,td{border-bottom:1px solid #ddd;padding:6px 8px;text-align:left}th{background:#f1f5f5}
 .sum{display:flex;gap:24px;margin:16px 0}.sum div{font-size:13px;color:#555}.sum b{display:block;font-size:18px;color:#111}.neg{color:#c00}</style>
 <h1>Arbeitszeiten</h1><p>${parseKey(from).toLocaleDateString('de-DE')} – ${parseKey(to).toLocaleDateString('de-DE')} · erstellt am ${new Date().toLocaleDateString('de-DE')}</p>
-<div class="sum"><div>Ist<b>${dur(st.ist)}</b></div><div>Soll<b>${dur(st.soll)}</b></div><div>Saldo<b>${dur(st.saldo, true)}</b></div><div>Pausen<b>${dur(st.brk)}</b></div><div>Stundenkonto<b>${dur(balanceUntil(to, now), true)}</b></div></div>
+<div class="sum"><div>Ist<b>${dur(st.ist)}</b></div><div>Soll<b>${dur(st.soll)}</b></div><div>Saldo<b>${dur(st.saldo, true)}</b></div><div>Pausen<b>${dur(st.brk)}</b></div><div>Stundenkonto<b>${dur(balanceUntil(to, now), true)}</b></div>${db.settings.pay.wage ? `<div>Verdienst (brutto, geschätzt)<b>${eur(rangeEarn(from, to, now).total)}</b></div>` : ''}</div>
 <table><thead><tr><th>Tag</th><th>Beginn</th><th>Ende</th><th>Pause</th><th>Arbeit</th><th>Soll</th><th>Saldo</th><th>Bemerkung</th></tr></thead><tbody>${rows}</tbody></table></html>`;
   saveFile(`Arbeitszeiten_${from}_bis_${to}.html`, html, 'text/html').catch(e => toast('Export fehlgeschlagen: ' + e.message));
 }
@@ -905,6 +950,14 @@ RENDER.settings = () => {
       <div class="row click" onclick="go('urlaub')"><span>🏖️ Urlaub ${new Date().getFullYear()}</span><span class="muted">noch ${fmtDays(vacationSummary(new Date().getFullYear()).left)} von ${fmtDays(vacationSummary(new Date().getFullYear()).total)} Tagen ›</span></div>
       <div class="row click" onclick="go('feiertage')"><span>🎉 Bundesland</span><span class="muted">${esc(BUNDESLAENDER[s.land])} ›</span></div>
       <label>Standard-Urlaubsanspruch für neue Jahre (Tage)</label><input type="number" id="setVacation" step="0.5" min="0" value="${s.vacation}"></div>
+    <div class="card" id="payCard"><h3>💶 Stundenlohn & Verdienst</h3>
+      <label style="margin-top:0">Stundenlohn brutto in € (leer = aus)</label><input type="text" id="payWage" inputmode="decimal" value="${s.pay.wage ? String(s.pay.wage).replace('.', ',') : ''}" placeholder="z.B. 14,50">
+      <div ${s.pay.wage ? '' : 'hidden'}>
+        <label class="check" style="margin-top:12px"><input type="checkbox" id="payAbs" ${s.pay.paidAbsence ? 'checked' : ''}> Urlaub, Krankheit und Feiertage bezahlt (mit den Sollstunden des Tages)</label>
+        <div class="inline"><div><label>Sonntagszuschlag %</label><input type="number" id="paySun" min="0" max="300" step="5" value="${s.pay.sunPct || 0}"></div>
+          <div><label>Feiertagszuschlag %</label><input type="number" id="payHol" min="0" max="300" step="5" value="${s.pay.holPct || 0}"></div></div>
+        <label>Verdienstgrenze pro Monat in € (z.B. Minijob, leer = keine)</label><input type="number" id="payLimit" step="1" min="0" value="${s.pay.limit || ''}">
+        <p class="muted" style="margin:6px 0 0">Der Verdienst erscheint in Woche, Monat, Jahr und im Auszug – brutto und nur geschätzt, ohne Steuern und Abgaben.</p></div></div>
     <div class="card" id="remCard"><h3>🔔 Erinnerungen</h3>
       <label class="check"><input type="checkbox" id="remDaily" ${s.reminders.daily ? 'checked' : ''}> Täglich erinnern, die Zeit einzutragen</label>
       <div class="inline" ${s.reminders.daily ? '' : 'hidden'}><div><label>Uhrzeit</label><input type="time" id="remTime" value="${s.reminders.time}"></div></div>
@@ -940,6 +993,9 @@ $('v-settings').addEventListener('change', async ev => {
   s.savePhotos = $('setSavePhotos').checked;
   s.checkLaw = $('setCheckLaw').checked;
   s.autoUpdate = $('setAutoUpdate').checked;
+  const hadWage = !!s.pay.wage;
+  Object.assign(s.pay, { wage: Math.max(0, parseFloat(($('payWage').value || '').replace(',', '.')) || 0), paidAbsence: $('payAbs').checked,
+    sunPct: num('paySun', 0), holPct: num('payHol', 0), limit: num('payLimit', 0) });
   s.days = [...document.querySelectorAll('#v-settings [data-day]:checked')].map(i => +i.dataset.day);
   const wantNotif = (!r.daily && $('remDaily').checked) || (!r.clockOut && $('remOut').checked) || (!r.pause && $('remPause').checked);
   Object.assign(r, { daily: $('remDaily').checked, time: $('remTime').value || '18:00', onlyWorkdays: $('remWork').checked, skipIfEntered: $('remSkip').checked,
@@ -947,7 +1003,7 @@ $('v-settings').addEventListener('change', async ev => {
   if (wantNotif && !(await ensureNotifPermission())) toast('Benachrichtigungen sind nicht erlaubt – bitte in den Android-Einstellungen der App freigeben');
   else toast('Gespeichert');
   // Felder, die andere Felder ein-/ausblenden, neu zeichnen
-  const rerender = ['remDaily', 'remOut', 'remPause', 'setWeekHours', 'setTarget'].includes(ev.target.id) || ev.target.dataset.day != null;
+  const rerender = ['remDaily', 'remOut', 'remPause', 'setWeekHours', 'setTarget'].includes(ev.target.id) || ev.target.dataset.day != null || hadWage !== !!s.pay.wage;
   save(rerender);
 });
 
