@@ -44,6 +44,7 @@
 | 🗑️ **Papierkorb** | Gelöschte Einträge und besondere Tage 30 Tage lang wiederherstellbar |
 | ⚖️ **Soll / Ist / Saldo** | Soll pro Tag oder pro Woche (z. B. 35, 40, 45 Std.), Arbeitstage wählen; Stundenkonto fortlaufend (mit Startsaldo) oder **jede Woche neu ab 0** – so siehst du sofort, ob dein Wochensoll erreicht ist |
 | 💶 **Stundenlohn & Verdienst** | Stundenlohn eintragen und den geschätzten Bruttoverdienst in Woche, Monat, Jahr, Auszug und CSV sehen – optional mit bezahltem Urlaub/Krank/Feiertag, Sonntags- und Feiertagszuschlag und Verdienstgrenze pro Monat (z. B. Minijob) |
+| 📆 **Arbeitszeit-Änderungen** | Soll und Arbeitstage ab einem Datum ändern (z. B. ab März nur noch 30 Std. Mo–Do) – frühere Wochen und Monate behalten ihr altes Soll, Saldo, Urlaub und Verdienst stimmen weiter |
 | 🔔 **Erinnerungen** | Tägliche Benachrichtigung zur gewünschten Uhrzeit, falls du noch nichts eingetragen hast (nur an Arbeitstagen); optional „Noch eingestempelt?“ nach X Stunden und „Pause vorbei“ nach X Minuten |
 | ☕ **Mindestpause** | Optional: gesetzliche Pause (30 Min. ab 6 Std., 45 Min. ab 9 Std.) automatisch abziehen |
 | 💾 **Backup** | **Automatisch** täglich oder wöchentlich in **Dokumente/Stempeluhr** (bleibt auch nach dem Deinstallieren), alte Kopien werden aufgeräumt; Wiederherstellen mit einem Tipp; zusätzlich manuell als JSON teilen und laden |
@@ -86,6 +87,7 @@ Status (**neu**, **schon vorhanden**, **ersetzt vorhandene …**) und wählst pe
 | Stempeln, Pausen, Nachtragen, alle Ansichten und Werkzeuge, Saldo, Wochenkonto, Urlaub, Feiertage | ✅ getestet (Browser) |
 | Verdienst-Berechnung (Lohn, bezahlte Abwesenheit, Zuschläge, Grenze) | ✅ getestet (Browser) |
 | Automatisches Backup: Anlegen, Aufräumen, Wiederherstellen | ✅ getestet (Browser, Dateisystem simuliert) |
+| Arbeitszeit-Änderungen ab Datum (inkl. Woche mit Wechsel) | ✅ getestet (Browser) |
 | Planung der Erinnerungen | ✅ getestet (Browser, Benachrichtigungen simuliert) |
 | Erkennung des Zettel-Formats inkl. typischer OCR-Fehler (O/0, l/1, ;/:) | ✅ getestet (mit Text eines echten Zettels) |
 | Zettel-Scan mit Kamera auf dem Handy | ungetestet |

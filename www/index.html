@@ -230,6 +230,20 @@ svg.chart { width: 100%; height: auto; display: block; }
 </form></dialog>
 
 <!-- Tag bearbeiten -->
+<dialog id="schedDlg"><form id="schedForm">
+  <h2 id="schedTitle">Arbeitszeit</h2>
+  <div id="schFromWrap"><label>Gilt ab</label><input type="date" id="schFrom"></div>
+  <div class="inline"><div><label>Soll</label><select id="schMode"><option value="day">pro Tag</option><option value="week">pro Woche</option></select></div>
+    <div><label>Stunden</label><input type="number" id="schHours" step="0.25" min="0" max="100" inputmode="decimal"></div></div>
+  <label>Arbeitstage</label><div class="weekdays" id="schDays"></div>
+  <p class="muted" id="schHint"></p>
+  <div class="actions">
+    <button type="button" class="danger" id="schDelete">Löschen</button>
+    <button type="button" data-close>Abbrechen</button>
+    <button type="submit" class="primary">Speichern</button>
+  </div>
+</form></dialog>
+
 <dialog id="tagDlg"><form id="tagForm">
   <h2 id="tagTitle">Tag</h2>
   <label>Name</label><input type="text" id="tName" required maxlength="30">

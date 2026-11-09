@@ -14,6 +14,7 @@ function load() {
   const out = {
     entries: d.entries || [], specials: d.specials || [], tags: d.tags || [], trash: d.trash || [],
     vacationYears: d.vacationYears || {}, // { "2026": { days: 30, carry: 2 } }
+    schedules: (d.schedules || []).sort((a, b) => a.from < b.from ? -1 : 1), // Arbeitszeit-Änderungen ab Datum
     settings: { ...DEFAULT_SETTINGS, ...(d.settings || {}) },
   };
   out.settings.reminders = { ...DEFAULT_REMINDERS, ...(d.settings?.reminders || {}) };
@@ -102,12 +103,15 @@ function calc(e, now = Date.now()) {
 const netOf = (k, now) => entriesOf(k).reduce((s, e) => s + calc(e, now).net, 0);
 const brkOf = (k, now) => entriesOf(k).reduce((s, e) => s + calc(e, now).brk, 0);
 // Soll pro Arbeitstag: direkt eingestellt oder Wochenstunden gleichmäßig auf die Arbeitstage verteilt
-const dailyTarget = () => db.settings.sollMode === 'week'
-  ? (db.settings.days.length ? db.settings.weekHours / db.settings.days.length : 0) * H
-  : db.settings.target * H;
+// Arbeitszeit-Modell, das am Tag k gilt: die letzte Änderung mit from <= k, sonst das Grundmodell aus den Einstellungen
+function schedOf(k = todayKey()) { let c = db.settings; for (const x of db.schedules) { if (x.from <= k) c = x; else break; } return c; }
+const isWorkday = k => schedOf(k).days.includes(parseKey(k).getDay());
+const dailyTarget = (k = todayKey()) => { const c = schedOf(k);
+  return c.sollMode === 'week' ? (c.days.length ? c.weekHours / c.days.length : 0) * H : c.target * H; };
+const schedText = c => `${c.sollMode === 'week' ? String(c.weekHours).replace('.', ',') + ' Std./Woche' : String(c.target).replace('.', ',') + ' Std./Tag'} · ${[1,2,3,4,5,6,0].filter(d => c.days.includes(d)).map(d => WD[d]).join(', ') || 'keine Arbeitstage'}`;
 function sollOf(k) {
   const d = parseKey(k);
-  let s = db.settings.days.includes(d.getDay()) ? dailyTarget() : 0;
+  let s = isWorkday(k) ? dailyTarget(k) : 0;
   if (s && holidayOf(k)) s = 0;
   const sp = specialOf(k);
   if (sp && s && SPECIAL[sp.type]?.credit) s = sp.half ? s / 2 : 0;
@@ -145,7 +149,7 @@ const kontoOf = (k, now = Date.now()) => db.settings.balanceMode === 'week' ? we
 const eur = n => n.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
 // Bezahlte Abwesenheit: Soll, das an Feiertagen / Urlaub / Krank usw. wegfällt, wird wie gearbeitet bezahlt
 function paidCreditOf(k) {
-  const base = db.settings.days.includes(parseKey(k).getDay()) ? dailyTarget() : 0;
+  const base = isWorkday(k) ? dailyTarget(k) : 0;
   if (!base) return 0;
   if (holidayOf(k)) return base;
   const sp = specialOf(k);
@@ -481,13 +485,13 @@ function vacationBlocks(y) {
   }
   return blocks.reverse();
 }
-function workdaysIn(from, to) { let n = 0; for (const k of days(from, to)) if (db.settings.days.includes(parseKey(k).getDay()) && !holidayOf(k)) n++; return n; }
+function workdaysIn(from, to) { let n = 0; for (const k of days(from, to)) if (isWorkday(k) && !holidayOf(k)) n++; return n; }
 // Brückentage: Feiertag am Di/Do -> Mo/Fr frei nehmen ergibt ein langes Wochenende
 function bridgeDays(y) {
   const out = [];
   for (const [k, name] of Object.entries(holidaysOf(y, db.settings.land))) {
     const wd = parseKey(k).getDay(), b = wd === 2 ? addDays(k, -1) : wd === 4 ? addDays(k, 1) : null;
-    if (b && db.settings.days.includes(parseKey(b).getDay()) && !holidayOf(b)) out.push({ k: b, name, holiday: k, free: 4 });
+    if (b && isWorkday(b) && !holidayOf(b)) out.push({ k: b, name, holiday: k, free: 4 });
   }
   return out;
 }
@@ -534,7 +538,7 @@ RENDER.feiertage = () => {
   const y = ui.holYear ||= new Date().getFullYear(), today = todayKey();
   const hol = Object.entries(holidaysOf(y, db.settings.land));
   const next = hol.find(([k]) => k >= today);
-  const onWork = hol.filter(([k]) => db.settings.days.includes(parseKey(k).getDay())).length;
+  const onWork = hol.filter(([k]) => isWorkday(k)).length;
   $('v-feiertage').innerHTML = `
     <div class="card"><label style="margin-top:0">Dein Bundesland</label>
       <select id="holLand">${Object.entries(BUNDESLAENDER).map(([k, n]) => `<option value="${k}" ${k === db.settings.land ? 'selected' : ''}>${n}</option>`).join('')}</select>
@@ -543,7 +547,7 @@ RENDER.feiertage = () => {
     <div class="card stats"><div><span>Feiertage</span><b>${hol.length}</b></div><div><span>an Arbeitstagen</span><b>${onWork}</b></div>
       <div><span>Nächster</span><b style="font-size:14px">${next ? shortDate(next[0]) : '–'}</b></div></div>
     <div class="card">${hol.map(([k, n]) => {
-      const d = parseKey(k), work = db.settings.days.includes(d.getDay()), inDays = Math.round((d - parseKey(today)) / DAY);
+      const d = parseKey(k), work = isWorkday(k), inDays = Math.round((d - parseKey(today)) / DAY);
       return `<div class="row click" onclick="go('tag',{date:'${k}'})" style="${k < today ? 'opacity:.55' : ''}">
         <div><b>${n}</b><div class="muted">${WDL[d.getDay()]}, ${d.getDate()}. ${MONTHS[d.getMonth()]}${work ? '' : ' · arbeitsfrei'}</div></div>
         <span class="muted">${inDays === 0 ? 'heute' : inDays > 0 ? 'in ' + inDays + ' T.' : ''}</span></div>`;
@@ -609,7 +613,7 @@ $('specForm').addEventListener('submit', ev => {
     const from = $('sFrom').value, to = $('sTo').value && $('sTo').value >= from ? $('sTo').value : from;
     let n = 0;
     for (const k of days(from, to)) {
-      if (from !== to && (!db.settings.days.includes(parseKey(k).getDay()) || holidayOf(k))) continue;
+      if (from !== to && (!isWorkday(k) || holidayOf(k))) continue;
       const old = db.specials.find(s => s.date === k); if (old) trashSpecial(old);
       db.specials.push({ id: uid(), date: k, type, half, note }); n++;
     }
@@ -932,17 +936,21 @@ function emptyTrash() { if (!confirm('Papierkorb endgültig leeren?')) return; d
 // ================= Einstellungen =================
 RENDER.settings = () => {
   topbar();
-  const s = db.settings;
+  const s = db.settings, c = schedOf(todayKey());
   $('v-settings').innerHTML = `
     <div class="card"><h3>Arbeitszeit</h3>
       <label>Sollzeit angeben</label>
-      <div class="seg" style="margin:0"><button type="button" class="${s.sollMode !== 'week' ? 'on' : ''}" onclick="db.settings.sollMode='day';save()">pro Tag</button><button type="button" class="${s.sollMode === 'week' ? 'on' : ''}" onclick="db.settings.sollMode='week';save()">pro Woche</button></div>
-      ${s.sollMode === 'week'
-        ? `<label>Wochenstunden (z.B. 35, 40, 45)</label><input type="number" id="setWeekHours" step="0.5" min="0" max="100" value="${s.weekHours}">
+      ${c !== s ? `<p class="muted" style="margin:-4px 0 8px">Gilt seit ${parseKey(c.from).toLocaleDateString('de-DE')} – frühere Zeiträume unter „Änderungen“.</p>` : ''}
+      <div class="seg" style="margin:0"><button type="button" class="${c.sollMode !== 'week' ? 'on' : ''}" onclick="schedOf().sollMode='day';save()">pro Tag</button><button type="button" class="${c.sollMode === 'week' ? 'on' : ''}" onclick="schedOf().sollMode='week';save()">pro Woche</button></div>
+      ${c.sollMode === 'week'
+        ? `<label>Wochenstunden (z.B. 35, 40, 45)</label><input type="number" id="setWeekHours" step="0.5" min="0" max="100" value="${c.weekHours}">
            <p class="muted" style="margin:4px 0 0">= ${dur(dailyTarget())} pro Arbeitstag. Feiertage und Urlaub senken das Wochensoll automatisch.</p>`
-        : `<label>Sollstunden pro Arbeitstag</label><input type="number" id="setTarget" step="0.25" min="0" max="24" value="${s.target}">
-           <p class="muted" style="margin:4px 0 0">= ${dur(s.target * H * s.days.length)} pro Woche</p>`}
-      <label>Arbeitstage</label><div class="weekdays">${[1,2,3,4,5,6,0].map(d => `<label><input type="checkbox" data-day="${d}" ${s.days.includes(d) ? 'checked' : ''}>${WD[d]}</label>`).join('')}</div>
+        : `<label>Sollstunden pro Arbeitstag</label><input type="number" id="setTarget" step="0.25" min="0" max="24" value="${c.target}">
+           <p class="muted" style="margin:4px 0 0">= ${dur(c.target * H * c.days.length)} pro Woche</p>`}
+      <label>Arbeitstage</label><div class="weekdays">${[1,2,3,4,5,6,0].map(d => `<label><input type="checkbox" data-day="${d}" ${c.days.includes(d) ? 'checked' : ''}>${WD[d]}</label>`).join('')}</div>
+      <label>Änderungen der Arbeitszeit (z.B. ab März nur noch 30 Std.)</label>
+      ${schedListHTML()}
+      <div class="btns" style="margin-top:8px"><button class="full" onclick="openSched()">+ Änderung ab Datum</button></div>
       <label>Stundenkonto</label>
       <div class="seg" style="margin:0"><button type="button" class="${s.balanceMode !== 'week' ? 'on' : ''}" onclick="db.settings.balanceMode='total';save()">fortlaufend</button><button type="button" class="${s.balanceMode === 'week' ? 'on' : ''}" onclick="db.settings.balanceMode='week';save()">jede Woche neu</button></div>
       <p class="muted" style="margin:4px 0 0">${s.balanceMode === 'week' ? 'Das Konto startet jeden Montag bei −Wochensoll und erreicht 0, sobald du dein Wochensoll geschafft hast.' : 'Über- und Minusstunden sammeln sich über alle Wochen und Monate.'}</p>
@@ -994,8 +1002,9 @@ RENDER.settings = () => {
 };
 $('v-settings').addEventListener('change', async ev => {
   const s = db.settings, r = s.reminders, num = (id, f) => $(id) ? (parseFloat($(id).value) || 0) : f;
-  if ($('setTarget')) s.target = num('setTarget', s.target);
-  if ($('setWeekHours')) s.weekHours = num('setWeekHours', s.weekHours);
+  const c = schedOf(todayKey());
+  if ($('setTarget')) c.target = num('setTarget', c.target);
+  if ($('setWeekHours')) c.weekHours = num('setWeekHours', c.weekHours);
   if ($('setStartBalance')) s.startBalance = num('setStartBalance', s.startBalance);
   s.autoBreak = $('setAutoBreak').checked;
   s.vacation = num('setVacation', s.vacation);
@@ -1008,7 +1017,7 @@ $('v-settings').addEventListener('change', async ev => {
   const hadWage = !!s.pay.wage;
   Object.assign(s.pay, { wage: Math.max(0, parseFloat(($('payWage').value || '').replace(',', '.')) || 0), paidAbsence: $('payAbs').checked,
     sunPct: num('paySun', 0), holPct: num('payHol', 0), limit: num('payLimit', 0) });
-  s.days = [...document.querySelectorAll('#v-settings [data-day]:checked')].map(i => +i.dataset.day);
+  c.days = [...document.querySelectorAll('#v-settings [data-day]:checked')].map(i => +i.dataset.day);
   const wantNotif = (!r.daily && $('remDaily').checked) || (!r.clockOut && $('remOut').checked) || (!r.pause && $('remPause').checked);
   Object.assign(r, { daily: $('remDaily').checked, time: $('remTime').value || '18:00', onlyWorkdays: $('remWork').checked, skipIfEntered: $('remSkip').checked,
     clockOut: $('remOut').checked, clockOutHours: num('remOutH', 9) || 9, pause: $('remPause').checked, pauseMin: num('remPauseM', 30) || 30 });
@@ -1018,6 +1027,52 @@ $('v-settings').addEventListener('change', async ev => {
   const rerender = ['remDaily', 'remOut', 'remPause', 'setWeekHours', 'setTarget'].includes(ev.target.id) || ev.target.dataset.day != null || hadWage !== !!s.pay.wage || hadBak !== s.backup.mode;
   save(rerender);
 });
+
+// ================= Arbeitszeit-Änderungen =================
+function schedListHTML() {
+  const L = db.schedules, today = todayKey();
+  if (!L.length) return '<p class="muted" style="margin:4px 0 0">Keine – die Einstellungen oben gelten für alle Tage.</p>';
+  const fmt = k => parseKey(k).toLocaleDateString('de-DE');
+  const rows = [{ c: db.settings, label: `bis ${fmt(addDays(L[0].from, -1))}` }, ...L.map(c => ({ c, label: `ab ${fmt(c.from)}` }))];
+  const cur = schedOf(today);
+  return rows.map(({ c, label }) => `<div class="row click" onclick="openSched('${c.id || 'base'}')"><div><b>${label}</b>${c === cur ? ' <span class="chip" style="font-size:12px">aktuell</span>' : c.from > today ? ' <span class="muted">geplant</span>' : ''}<div class="muted">${schedText(c)}</div></div><span class="muted">✎</span></div>`).join('');
+}
+let schedEditing = null;
+function openSched(id) {
+  const c = id === 'base' ? db.settings : id ? db.schedules.find(x => x.id === id) : { ...schedOf(todayKey()), id: null, from: '' };
+  schedEditing = id || null;
+  $('schedTitle').textContent = id ? 'Arbeitszeit bearbeiten' : 'Arbeitszeit ändern ab …';
+  $('schFromWrap').hidden = id === 'base';
+  $('schFrom').value = c.from || dateKey(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1));
+  $('schMode').value = c.sollMode === 'week' ? 'week' : 'day';
+  $('schHours').value = c.sollMode === 'week' ? c.weekHours : c.target;
+  $('schDays').innerHTML = [1,2,3,4,5,6,0].map(d => `<label><input type="checkbox" data-sday="${d}" ${c.days.includes(d) ? 'checked' : ''}>${WD[d]}</label>`).join('');
+  $('schDelete').hidden = !id || id === 'base';
+  $('schHint').textContent = id === 'base' ? 'Das Grundmodell gilt für alle Tage vor der ersten Änderung.' : 'Gilt ab diesem Tag, bis zur nächsten Änderung. Frühere Tage behalten ihr altes Soll.';
+  $('schedDlg').showModal();
+}
+$('schMode').onchange = () => { $('schHours').value = $('schMode').value === 'week' ? 40 : 8; };
+$('schedForm').addEventListener('submit', ev => {
+  ev.preventDefault();
+  const hours = parseFloat(String($('schHours').value).replace(',', '.')) || 0, mode = $('schMode').value;
+  const data = { sollMode: mode, days: [...document.querySelectorAll('#schDays [data-sday]:checked')].map(i => +i.dataset.sday) };
+  if (mode === 'week') data.weekHours = hours; else data.target = hours;
+  if (schedEditing === 'base') Object.assign(db.settings, data);
+  else {
+    const from = $('schFrom').value; if (!from) { toast('Bitte ein Datum wählen'); return; }
+    const clash = db.schedules.find(x => x.from === from && x.id !== schedEditing);
+    if (clash) { toast('Ab diesem Tag gibt es schon eine Änderung'); return; }
+    const old = schedEditing ? db.schedules.find(x => x.id === schedEditing) : null;
+    const base = old || schedOf(from);
+    const item = { weekHours: base.weekHours, target: base.target, ...(old || {}), ...data, from, id: old?.id || uid() };
+    db.schedules = [...db.schedules.filter(x => x.id !== item.id), item].sort((a, b) => a.from < b.from ? -1 : 1);
+  }
+  $('schedDlg').close(); save(); toast('Gespeichert');
+});
+$('schDelete').onclick = () => {
+  if (!confirm('Diese Änderung löschen? Ab dem Datum gilt dann wieder das vorherige Modell.')) return;
+  db.schedules = db.schedules.filter(x => x.id !== schedEditing); $('schedDlg').close(); save(); toast('Gelöscht');
+};
 
 // ================= Eintrag bearbeiten =================
 let editingId = null, editTags = [];
