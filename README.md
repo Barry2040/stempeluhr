@@ -44,6 +44,7 @@
 | 🗑️ **Papierkorb** | Gelöschte Einträge und besondere Tage 30 Tage lang wiederherstellbar |
 | ⚖️ **Soll / Ist / Saldo** | Soll pro Tag oder pro Woche (z. B. 35, 40, 45 Std.), Arbeitstage wählen; Stundenkonto fortlaufend (mit Startsaldo) oder **jede Woche neu ab 0** – so siehst du sofort, ob dein Wochensoll erreicht ist |
 | 💶 **Stundenlohn & Verdienst** | Stundenlohn eintragen und den geschätzten Bruttoverdienst in Woche, Monat, Jahr, Auszug und CSV sehen – optional mit bezahltem Urlaub/Krank/Feiertag, Sonntags- und Feiertagszuschlag und Verdienstgrenze pro Monat (z. B. Minijob) |
+| 🧮 **Brutto / Netto** | Steuerklasse, Kinder, Kirchensteuer, Krankenkassen-Zusatzbeitrag einstellen und sehen, was ca. netto übrig bleibt – aus dem Stundenlohn auf den Monat hochgerechnet oder aus einem festen Gehalt; Minijob und Midijob werden erkannt (Werte 2026, grobe Schätzung) |
 | 📆 **Arbeitszeit-Änderungen** | Soll und Arbeitstage ab einem Datum ändern (z. B. ab März nur noch 30 Std. Mo–Do) – frühere Wochen und Monate behalten ihr altes Soll, Saldo, Urlaub und Verdienst stimmen weiter |
 | 🔔 **Erinnerungen** | Tägliche Benachrichtigung zur gewünschten Uhrzeit, falls du noch nichts eingetragen hast (nur an Arbeitstagen); optional „Noch eingestempelt?“ nach X Stunden und „Pause vorbei“ nach X Minuten |
 | ☕ **Mindestpause** | Optional: gesetzliche Pause (30 Min. ab 6 Std., 45 Min. ab 9 Std.) automatisch abziehen |
@@ -88,6 +89,7 @@ Status (**neu**, **schon vorhanden**, **ersetzt vorhandene …**) und wählst pe
 | Verdienst-Berechnung (Lohn, bezahlte Abwesenheit, Zuschläge, Grenze) | ✅ getestet (Browser) |
 | Automatisches Backup: Anlegen, Aufräumen, Wiederherstellen | ✅ getestet (Browser, Dateisystem simuliert) |
 | Arbeitszeit-Änderungen ab Datum (inkl. Woche mit Wechsel) | ✅ getestet (Browser) |
+| Brutto-Netto-Rechnung (Steuertarif 2026, Sozialabgaben, Mini-/Midijob) | ✅ getestet (Node + Browser, Plausibilität) – keine Gewähr |
 | Planung der Erinnerungen | ✅ getestet (Browser, Benachrichtigungen simuliert) |
 | Erkennung des Zettel-Formats inkl. typischer OCR-Fehler (O/0, l/1, ;/:) | ✅ getestet (mit Text eines echten Zettels) |
 | Zettel-Scan mit Kamera auf dem Handy | ungetestet |
@@ -110,7 +112,7 @@ sind sie weg – darum legt die App automatisch Backups im Ordner **Dokumente/St
 <summary>Aufbau, lokal testen, Build</summary>
 
 - Die ganze App ist eine Web-App: [`www/index.html`](www/index.html) (Aufbau + Styles), [`www/app.js`](www/app.js) (Logik und Ansichten),
-  [`www/scan.js`](www/scan.js) (Zettel-Erkennung) und [`www/holidays.js`](www/holidays.js) (Feiertage) – die letzten beiden ohne UI, auch in Node testbar.
+  [`www/scan.js`](www/scan.js) (Zettel-Erkennung) und [`www/holidays.js`](www/holidays.js) (Feiertage) und [`www/netto.js`](www/netto.js) (Brutto-Netto) – ohne UI, auch in Node testbar.
   Daten liegen in `localStorage`, Fotos in IndexedDB.
 - [Capacitor](https://capacitorjs.com) verpackt sie als Android-App; Kamera und Galerie laufen über ein normales `<input type="file">`.
 - **Lokal testen:** `npx http-server www` – alles außer Scan und Export läuft im Browser.

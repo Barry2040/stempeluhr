@@ -3,9 +3,10 @@
 const KEY = 'stempeluhr.v1';
 const DEFAULT_REMINDERS = { daily: false, time: '18:00', onlyWorkdays: true, skipIfEntered: true, clockOut: false, clockOutHours: 9, pause: false, pauseMin: 30 };
 const DEFAULT_BACKUP = { mode: 'daily', keep: 14 };
+const DEFAULT_NET = { klasse: 1, kinder: 0, kirche: false, kinderlos: true, pvKinder: 0, zusatz: 2.9, rvBefreit: true, mode: 'wage', fixed: 0 };
 const DEFAULT_PAY = { wage: 0, paidAbsence: true, sunPct: 0, holPct: 0, limit: 0 };
 const DEFAULT_SETTINGS = { target: 8, days: [1,2,3,4,5], autoBreak: false, startBalance: 0, autoUpdate: true, land: '', vacation: 30, savePhotos: true, checkLaw: true,
-  sollMode: 'day', weekHours: 40, balanceMode: 'total', skipBuild: 0, reminders: DEFAULT_REMINDERS, pay: DEFAULT_PAY, backup: DEFAULT_BACKUP };
+  sollMode: 'day', weekHours: 40, balanceMode: 'total', skipBuild: 0, reminders: DEFAULT_REMINDERS, pay: DEFAULT_PAY, backup: DEFAULT_BACKUP, net: DEFAULT_NET };
 let db = load();
 function load() {
   let d = null;
@@ -20,6 +21,7 @@ function load() {
   out.settings.reminders = { ...DEFAULT_REMINDERS, ...(d.settings?.reminders || {}) };
   out.settings.pay = { ...DEFAULT_PAY, ...(d.settings?.pay || {}) };
   out.settings.backup = { ...DEFAULT_BACKUP, ...(d.settings?.backup || {}) };
+  out.settings.net = { ...DEFAULT_NET, ...(d.settings?.net || {}) };
   out.entries.forEach(e => { e.tags ||= []; e.breaks ||= []; });
   const cutoff = Date.now() - 30 * 864e5; // Papierkorb nach 30 Tagen leeren
   out.trash = out.trash.filter(t => t.at > cutoff);
@@ -199,10 +201,10 @@ function trashSpecial(s) { db.specials = db.specials.filter(x => x !== s && x.id
 const VIEWS = {
   menu: 'Menü', tag: 'Tag', woche: 'Woche', monat: 'Monat', jahr: 'Jahr', besondere: 'Besondere Tage', suchen: 'Suchen',
   tags: 'Tags', diagramm: 'Diagramm', inkonsistent: 'Inkonsistentes', fotos: 'Fotos', auszug: 'Auszug', papierkorb: 'Papierkorb', settings: 'Einstellungen',
-  urlaub: 'Urlaub', feiertage: 'Feiertage',
+  urlaub: 'Urlaub', feiertage: 'Feiertage', netto: 'Brutto / Netto',
 };
 const ROOT = ['menu', 'tag', 'settings'];
-const ui = { view: 'tag', date: todayKey(), week: mondayOf(todayKey()), month: todayKey().slice(0, 7), year: +todayKey().slice(0, 4),
+const ui = { netMonth: todayKey().slice(0, 7), view: 'tag', date: todayKey(), week: mondayOf(todayKey()), month: todayKey().slice(0, 7), year: +todayKey().slice(0, 4),
   chart: 'woche', chartRef: todayKey(), q: '', qTag: '', specYear: +todayKey().slice(0, 4),
   rep: { preset: 'monat', from: todayKey().slice(0, 8) + '01', to: todayKey() } };
 function go(view, opts = {}) {
@@ -257,6 +259,7 @@ const TI = {
   feiertage: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg>',
   glocke: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0112 0v5l2 2H4z"/><path d="M10 20a2 2 0 004 0"/></svg>',
   lohn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6.5 9.5v.01M17.5 14.5v.01"/></svg>',
+  netto: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h2M12 11h2M8 14h2M12 14h2M8 17h2M12 17h4M16 11v3"/></svg>',
   hilfe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 114 2c-1 .7-1.5 1.2-1.5 2.5M12 17v.01"/></svg>',
 };
 const tile = (v, label, onclick, badge) => `<button class="tile" onclick="${onclick || `go('${v}')`}"><span class="ti">${TI[v]}</span>${label}${badge ? `<span class="badge">${badge}</span>` : ''}</button>`;
@@ -270,7 +273,7 @@ RENDER.menu = () => {
     <div class="sec">WERKZEUGE</div>
     <div class="tiles">${tile('urlaub', 'Urlaub')}${tile('feiertage', 'Feiertage')}${tile('besondere', 'Besondere')}${tile('suchen', 'Suchen')}
       ${tile('tags', 'Tags')}${tile('diagramm', 'Diagramm')}${tile('inkonsistent', 'Prüfen', null, n ? (n > 99 ? '99+' : n) : '')}${tile('fotos', 'Fotos')}
-      ${tile('lohn', 'Verdienst', db.settings.pay.wage ? "go('monat')" : "go('settings');setTimeout(()=>$('payCard')?.scrollIntoView({behavior:'smooth'}),80)")}${tile('auszug', 'Auszug')}${tile('papierkorb', 'Papierkorb', null, db.trash.length || '')}</div>
+      ${tile('lohn', 'Verdienst', db.settings.pay.wage ? "go('monat')" : "go('settings');setTimeout(()=>$('payCard')?.scrollIntoView({behavior:'smooth'}),80)")}${tile('netto', 'Brutto / Netto')}${tile('auszug', 'Auszug')}${tile('papierkorb', 'Papierkorb', null, db.trash.length || '')}</div>
     <div class="sec">MEHR</div>
     <div class="tiles">${tile('scan', 'Zettel fotografieren', 'scanPick(true)')}${tile('fotos', 'Zettel aus Galerie', 'scanPick(false)')}
       ${tile('glocke', 'Erinnerungen', "go('settings');setTimeout(()=>$('remCard')?.scrollIntoView({behavior:'smooth'}),80)")}${tile('settings', 'Einstellungen')}
@@ -432,7 +435,8 @@ RENDER.monat = () => {
     <div class="card"><div class="row"><span>Arbeitstage mit Einträgen</span><b>${st.workdays}</b></div>
       <div class="row"><span>Pausen gesamt</span><b>${dur(st.brk)}</b></div>
       <div class="row"><span>Ø pro Arbeitstag</span><b>${st.workdays ? dur(st.ist / st.workdays) : '–'}</b></div></div>
-    ${earnCard(from, to, db.settings.pay.limit, now)}`;
+    ${earnCard(from, to, db.settings.pay.limit, now)}
+    ${db.settings.pay.wage || db.settings.net.mode === 'fixed' ? (() => { const g = monthGross(ui.month); return `<div class="card row click" onclick="go('netto',{netMonth:'${ui.month}'})" style="padding:14px 16px"><span>🧮 Netto ca. (${g.projected > g.soFar + 0.5 ? 'hochgerechnet' : 'Monat'})</span><b>${eur(bruttoNetto(g.projected, netOpts()).netto)} ›</b></div>`; })() : ''}`;
 };
 function shiftMonth(n) { const [y, m] = ui.month.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); ui.month = `${d.getFullYear()}-${pad(d.getMonth()+1)}`; render(); }
 
@@ -461,6 +465,63 @@ RENDER.jahr = () => {
     ${earnCard(`${y}-01-01`, `${y}-12-31`, (db.settings.pay.limit || 0) * 12, now)}
     <div class="card">${rows}</div>`;
 };
+
+// ================= Brutto / Netto =================
+const netOpts = () => { const n = db.settings.net; return { ...n, kirchSatz: ['BY', 'BW'].includes(db.settings.land) ? 8 : 9, sachsen: db.settings.land === 'SN' }; };
+// Monatsbrutto: festes Gehalt oder aus Stundenlohn – bis heute verdient + Rest des Monats nach Soll hochgerechnet
+function monthGross(ym) {
+  const n = db.settings.net;
+  if (n.mode === 'fixed') return { soFar: n.fixed, projected: n.fixed, fixed: true };
+  const [y, m] = ym.split('-').map(Number), from = `${ym}-01`, to = dateKey(new Date(y, m, 0)), today = todayKey(), p = db.settings.pay;
+  let soFar = 0, rest = 0;
+  for (const k of days(from, to)) {
+    if (k <= today) soFar += earnOf(k).total;
+    else rest += (sollOf(k) + (p.paidAbsence ? paidCreditOf(k) : 0)) / H * (p.wage || 0);
+  }
+  return { soFar, projected: soFar + rest };
+}
+RENDER.netto = () => {
+  topbar();
+  const n = db.settings.net, ym = ui.netMonth, [y, m] = ym.split('-').map(Number), g = monthGross(ym);
+  const r = bruttoNetto(g.projected, netOpts()), o = netOpts();
+  const line = (label, v, cl = '') => v ? `<div class="row"><span>${label}</span><b class="${cl}">− ${eur(v)}</b></div>` : '';
+  const noWage = n.mode === 'wage' && !db.settings.pay.wage;
+  $('v-netto').innerHTML = `
+    <div class="datebar"><button onclick="shiftNetMonth(-1)">‹</button><h2 onclick="ui.netMonth=todayKey().slice(0,7);render()">${MONTHS[m-1]} ${y}</h2><button onclick="shiftNetMonth(1)">›</button></div>
+    <div class="card"><label style="margin-top:0">Brutto kommt aus</label>
+      <div class="seg" style="margin:0"><button type="button" class="${n.mode !== 'fixed' ? 'on' : ''}" onclick="db.settings.net.mode='wage';save()">Stundenlohn</button><button type="button" class="${n.mode === 'fixed' ? 'on' : ''}" onclick="db.settings.net.mode='fixed';save()">festes Gehalt</button></div>
+      ${n.mode === 'fixed'
+        ? `<label>Monatsbrutto in €</label><input type="text" id="netFixed" inputmode="decimal" value="${n.fixed ? String(n.fixed).replace('.', ',') : ''}" placeholder="z.B. 2800">`
+        : noWage ? `<p class="muted">Trag zuerst deinen <a href="#" onclick="go('settings');setTimeout(()=>$('payCard')?.scrollIntoView({behavior:'smooth'}),80);return false">Stundenlohn in den Einstellungen</a> ein.</p>`
+        : `<p class="muted" style="margin:8px 0 0">Bis heute verdient: <b>${eur(g.soFar)}</b>${g.projected > g.soFar + 0.5 ? ` · hochgerechnet auf den ganzen Monat (Rest nach Soll): <b>${eur(g.projected)}</b>` : ''}</p>`}</div>
+    <div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline"><span class="muted">Brutto</span><b>${eur(r.brutto)}</b></div>
+      ${r.art === 'minijob' ? `<p class="muted" style="margin:6px 0">Minijob (bis ${eur(NT.minijob)}): keine Lohnsteuer und keine Kranken-/Pflege-/Arbeitslosenversicherung für dich.</p>` : ''}
+      ${r.art === 'midijob' ? `<p class="muted" style="margin:6px 0">Midijob (${eur(NT.minijob)}–${eur(NT.midiBis)}): verringerte Sozialabgaben.</p>` : ''}
+      ${line('Lohnsteuer', r.lst)}${line('Solidaritätszuschlag', r.soli)}${line(`Kirchensteuer (${o.kirchSatz} %)`, r.kist)}
+      ${line(`Krankenversicherung (${String(NT.kv + n.zusatz / 2).replace('.', ',')} %)`, r.kv)}${line('Pflegeversicherung', r.pv)}${line('Rentenversicherung', r.rv)}${line('Arbeitslosenversicherung', r.av)}
+      <div class="row" style="border-top:2px solid var(--line);margin-top:4px"><span><b>Netto ca.</b></span><b style="font-size:22px" class="pos">${eur(r.netto)}</b></div>
+      <p class="muted" style="margin:8px 0 0">Steuern ${eur(r.steuern)} · Sozialabgaben ${eur(r.sozial)}</p></div>
+    <div class="card"><h3>Deine Angaben</h3>
+      <div class="inline"><div><label style="margin-top:0">Steuerklasse</label><select id="netKl">${[1,2,3,4,5,6].map(k => `<option value="${k}" ${+n.klasse === k ? 'selected' : ''}>${['I','II','III','IV','V','VI'][k-1]}</option>`).join('')}</select></div>
+        <div><label style="margin-top:0">Kinder</label><input type="number" id="netKinder" min="0" max="10" step="1" value="${n.kinder}"></div></div>
+      <label class="check" style="margin-top:12px"><input type="checkbox" id="netKirche" ${n.kirche ? 'checked' : ''}> Kirchensteuer (${o.kirchSatz} % – richtet sich nach dem <a href="#" onclick="go('feiertage');return false">Bundesland</a>)</label>
+      <label class="check" style="margin-top:12px"><input type="checkbox" id="netKinderlos" ${n.kinderlos ? 'checked' : ''}> Kinderlos und mindestens 23 Jahre (Zuschlag Pflegeversicherung)</label>
+      <div ${n.kinderlos ? 'hidden' : ''}><label>Kinder unter 25 (Abschlag Pflegeversicherung ab dem 2. Kind)</label><input type="number" id="netPvKinder" min="0" max="10" step="1" value="${n.pvKinder}"></div>
+      <label>Zusatzbeitrag deiner Krankenkasse in % (Durchschnitt 2026: 2,9)</label><input type="text" id="netZusatz" inputmode="decimal" value="${String(n.zusatz).replace('.', ',')}">
+      ${r.art === 'minijob' || (g.projected <= NT.minijob && g.projected > 0) ? `<label class="check" style="margin-top:12px"><input type="checkbox" id="netRvBefreit" ${n.rvBefreit ? 'checked' : ''}> Minijob: von der Rentenversicherung befreit</label>` : ''}
+      <p class="muted" style="margin:12px 0 0">Grobe Schätzung mit den Werten ${NETTO_YEAR} für gesetzlich Versicherte – ohne Freibeträge, Sachbezüge, Zuschläge-Steuerfreiheit oder Privatversicherung. Deine Lohnabrechnung kann um einige Euro abweichen. Keine Steuerberatung.</p></div>`;
+};
+function shiftNetMonth(d) { const [y, m] = ui.netMonth.split('-').map(Number); const x = new Date(y, m - 1 + d, 1); ui.netMonth = `${x.getFullYear()}-${pad(x.getMonth()+1)}`; render(); }
+$('v-netto').addEventListener('change', ev => {
+  const n = db.settings.net, num = v => parseFloat(String(v || '').replace(',', '.')) || 0;
+  if ($('netFixed')) n.fixed = Math.max(0, num($('netFixed').value));
+  n.klasse = +$('netKl').value; n.kinder = Math.max(0, Math.round(num($('netKinder').value)));
+  n.kirche = $('netKirche').checked; n.kinderlos = $('netKinderlos').checked;
+  if ($('netPvKinder')) n.pvKinder = Math.max(0, Math.round(num($('netPvKinder').value)));
+  n.zusatz = Math.min(10, Math.max(0, num($('netZusatz').value)));
+  if ($('netRvBefreit')) n.rvBefreit = $('netRvBefreit').checked;
+  save();
+});
 
 // ================= Urlaub =================
 const fmtDays = n => String(n).replace('.', ',');
